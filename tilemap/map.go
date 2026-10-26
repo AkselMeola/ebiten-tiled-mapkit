@@ -1,0 +1,149 @@
+// Package tilemap is the format-agnostic map model. It must not import Ebiten or Tiled.
+package tilemap
+
+import (
+	"image"
+	"time"
+)
+
+// TileID indexes Map.Tiles; 0 is an empty cell.
+type TileID uint32
+
+// ImageRef is a slash-separated path within the file system the map was loaded from.
+type ImageRef string
+
+type Orientation uint8
+
+const (
+	OrientationUnknown Orientation = iota
+	OrientationOrthogonal
+	OrientationIsometric
+	OrientationStaggered
+	OrientationHexagonal
+)
+
+type Flip uint8
+
+const (
+	FlipH Flip = 1 << iota
+	FlipV
+	FlipD
+)
+
+type Cell struct {
+	Tile TileID
+	Flip Flip
+}
+
+func (c Cell) Empty() bool { return c.Tile == 0 }
+
+type TileDef struct {
+	Image     ImageRef
+	Src       image.Rectangle
+	Offset    image.Point
+	Class     string
+	Animation []Frame
+	Props     Properties
+	Colliders []Shape
+
+	animTotal time.Duration
+}
+
+type Frame struct {
+	Tile     TileID
+	Duration time.Duration
+}
+
+func (d *TileDef) SetAnimation(frames []Frame) {
+	d.Animation = frames
+	d.animTotal = sumFrames(frames)
+}
+
+func (d *TileDef) AnimationDuration() time.Duration {
+	if d.animTotal > 0 {
+		return d.animTotal
+	}
+	return sumFrames(d.Animation)
+}
+
+// FrameAt returns the frame to show at clock t, or 0 for static tiles.
+func (d *TileDef) FrameAt(t time.Duration) TileID {
+	if len(d.Animation) == 0 {
+		return 0
+	}
+	total := d.AnimationDuration()
+	if total <= 0 {
+		return d.Animation[0].Tile
+	}
+
+	t %= total
+	if t < 0 {
+		t += total
+	}
+	for _, f := range d.Animation {
+		if t < f.Duration {
+			return f.Tile
+		}
+		t -= f.Duration
+	}
+	return d.Animation[len(d.Animation)-1].Tile
+}
+
+// FrameAtOnce plays the animation once and holds the last frame; done reports it has finished.
+// Static tiles return 0, true.
+func (d *TileDef) FrameAtOnce(t time.Duration) (id TileID, done bool) {
+	if len(d.Animation) == 0 {
+		return 0, true
+	}
+	if t < 0 {
+		return d.Animation[0].Tile, false
+	}
+	if t >= d.AnimationDuration() {
+		return d.Animation[len(d.Animation)-1].Tile, true
+	}
+	return d.FrameAt(t), false
+}
+
+func sumFrames(frames []Frame) time.Duration {
+	var total time.Duration
+	for _, f := range frames {
+		total += f.Duration
+	}
+	return total
+}
+
+type Map struct {
+	Width, Height         int
+	TileWidth, TileHeight int
+	Orientation           Orientation
+	Tiles                 []TileDef
+	Layers                []Layer
+	Props                 Properties
+}
+
+// Tile returns nil for empty or unknown ids.
+func (m *Map) Tile(id TileID) *TileDef {
+	if id == 0 || int(id) >= len(m.Tiles) {
+		return nil
+	}
+	return &m.Tiles[id]
+}
+
+// Layer finds a layer by name, depth-first through groups.
+func (m *Map) Layer(name string) Layer {
+	return findLayer(m.Layers, name)
+}
+
+func findLayer(layers []Layer, name string) Layer {
+	for _, l := range layers {
+		if l.Base().Name == name {
+			return l
+		}
+		if g, ok := l.(*GroupLayer); ok {
+			if found := findLayer(g.Layers, name); found != nil {
+				return found
+			}
+		}
+	}
+	return nil
+}

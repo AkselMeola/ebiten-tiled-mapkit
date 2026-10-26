@@ -1,0 +1,270 @@
+# Design
+
+mapkit loads tile maps through pluggable adapters into a format-agnostic domain model, which a
+renderer draws with Ebiten through a swappable projection.
+
+```
+Tiled adapter ─┐
+(Text adapter) ┴─► tilemap.Map (pure data) ─► render.MapRenderer (Ebiten)
+                                                ├─ Projection (orthogonal; isometric later)
+                                                ├─ Animator (shared clock)
+                                                └─ TextureProvider
+```
+
+## Goals
+
+- Load Tiled maps and parse tile layers, tiles, tileset images, objects and custom properties.
+- Keep the domain independent of Tiled, so other adapters (text, JSON) can produce the same `Map`.
+- Render a `Map` with swappable projections.
+- Animate tiles with a shared clock, and let games animate their own entities with the same data.
+
+## Packages and dependency rule
+
+```
+tilemap/   domain model; no Ebiten, no Tiled imports
+tiled/     adapter: .tmx -> tilemap.Map
+render/    Ebiten renderer, projections, textures, animator
+examples/  example games
+```
+
+- `tiled` (and future adapters) import `tilemap`.
+- `render` imports `tilemap` and Ebiten.
+- `tilemap` imports nothing from this module, Ebiten or Tiled.
+
+`github.com/lafriks/go-tiled` is an implementation detail of `tiled`; its types never appear in
+`tilemap` or in the public API of `tiled`.
+
+## Domain model (`tilemap`)
+
+The domain refers to tiles by its own `TileID`, a dense index into `Map.Tiles`. Tiled concepts such
+as GIDs, `firstgid` and local tile ids exist only inside `tiled`.
+
+```go
+type TileID uint32 // 0 = empty cell; Tiles[0] is a reserved sentinel
+
+type Flip uint8 // FlipH | FlipV | FlipD (diagonal; with H/V gives 90° rotations)
+
+type Cell struct {
+    Tile TileID
+    Flip Flip
+}
+
+type TileDef struct {
+    Image     ImageRef        // slash path inside the map's fs.FS; no pixels
+    Src       image.Rectangle // region of that image
+    Offset    image.Point     // drawing offset (Tiled tileoffset)
+    Class     string          // user tile class, e.g. "Wall"
+    Animation []Frame         // nil if static; set via SetAnimation to cache the total duration
+    Props     Properties
+    Colliders []Shape         // relative to the tile's top-left
+}
+
+type Map struct {
+    Width, Height         int // tiles
+    TileWidth, TileHeight int // pixels
+    Orientation           Orientation // a hint; the renderer picks the projection
+    Tiles                 []TileDef   // index = TileID
+    Layers                []Layer     // ordered; also the draw order
+    Props                 Properties
+}
+```
+
+### Layers
+
+`Layer` is a closed interface (unexported marker method) so one ordered slice holds every kind.
+Common fields live in an embedded `LayerBase` (`Name`, `Class`, `Visible`, `Opacity`, offsets,
+`Props`). Kinds: `*TileLayer` (flat row-major `[]Cell`, never one object per tile), `*ObjectLayer`,
+`*ImageLayer`, `*GroupLayer`. Groups are kept, not flattened; their visibility, opacity and offset
+apply to their children at draw time.
+
+### Objects
+
+`MapObject` (Tiled's term) is deliberately not called Entity or Sprite. Objects are spawn
+descriptors: the game reads them and creates its own entities, so game logic never leaks into the
+library.
+
+```go
+type MapObject struct {
+    ID         int
+    Name, Type string
+    X, Y, W, H float64 // X, Y = top-left corner
+    Rotation   float64 // degrees, clockwise, around the top-left corner
+    Visible    bool
+    Opacity    float64
+    Tile       Cell    // zero if not a tile object
+    Shape      Shape   // rect, ellipse, point, polygon, polyline
+    Props      Properties
+}
+```
+
+**Anchor normalization.** Tiled anchors tile objects at the bottom-left (or per the tileset's
+`objectalignment`, or bottom-center on isometric maps). The domain has one rule for every object:
+`X, Y` is the top-left corner and rotation turns around it. The Tiled adapter converts, including for
+rotated objects; the conversion is lossless. `Bounds()` returns the rotated AABB and `SortY()` its
+bottom edge for depth sorting.
+
+### Properties
+
+`Properties` is `map[string]any` holding typed values: `string`, `int`, `float64`, `bool`,
+`color.RGBA`, `FilePath`, `ObjectRef`, or nested `Properties` for class properties. Typed getters
+return zero values when missing.
+
+### Zero values
+
+`Visible` and `Opacity` are plain fields, so their zero values mean hidden and transparent. Adapters
+must set them explicitly.
+
+## Tiled adapter (`tiled`)
+
+`tiled.Load(fsys fs.FS, name string)` reads the map from `fsys`; tilesets, templates and images are
+resolved relative to it inside the same `fsys`, so `embed.FS` and `os.DirFS` both work.
+
+Steps:
+
+1. Read the file once; scan it for the layer order and the `infinite` flag (see below).
+2. Parse with go-tiled.
+3. For each tileset, for each tile, append a `TileDef` and record `gidToTile[firstGID+i]`.
+   Atlas tilesets get one def per tile index with its source rect; image-collection tilesets get one
+   per `<tile>` with an image (sparse ids are fine).
+4. Translate animation frames through `gidToTile` once all tilesets are known.
+5. Convert layers: strip flip bits from GIDs into `Cell.Flip`, look up `TileID`.
+6. Convert objects: merge templates, resolve tile objects, normalize the anchor, convert shapes and
+   properties.
+
+go-tiled gaps worked around in the adapter:
+
+- **Layer order.** go-tiled keeps each layer kind in a separate slice, losing the interleaved order.
+  `layout.go` recovers it with a light XML token scan.
+- **Lazy tilesets.** go-tiled only initializes tilesets referenced by a GID; the adapter initializes
+  the rest (external ones are loaded, embedded ones get their base dir).
+- **Points.** go-tiled doesn't parse `<point/>`; a sizeless object with no other geometry is treated
+  as a point.
+- **Templates.** go-tiled loads templates but doesn't merge them. The instance's own fields win; a
+  template tile GID is remapped to the map tileset with the same resolved source path.
+
+Not supported yet: `.tmj`, infinite maps (rejected with `ErrInfiniteMap`), zstd, tileset `trans`
+color, text objects (loaded as rects), parallax, tint, image layer repeat.
+
+## Animation
+
+Tile animation is a pure function of time; tiles hold no per-instance state.
+
+```go
+func (d *TileDef) FrameAt(t time.Duration) TileID                    // loops; 0 for static tiles
+func (d *TileDef) FrameAtOnce(t time.Duration) (id TileID, done bool) // plays once, holds last frame
+```
+
+`FrameAt` walks `t % total` through the frame durations. All instances of a tile stay in sync, as in
+Tiled, and advancing animation costs one clock increment per tick.
+
+| Clock | `Clock % 600ms` | Frame (`[{4,200ms},{5,200ms},{6,200ms}]`) |
+|---|---|---|
+| 0ms | 0 | 4 |
+| 250ms | 250 | 5 |
+| 500ms | 500 | 6 |
+| 650ms | 50 | 4 |
+
+```go
+type Animator struct{ Clock time.Duration }
+func (a *Animator) Update(dt time.Duration)
+```
+
+Call `Update(render.Tick())` from Ebiten's `Update`, never wall-clock time in `Draw`, so animation is
+deterministic.
+
+**Per-entity animation** needs no extra machinery: an entity stores when its current animation
+started and passes `clock - start` as the time. That restarts, desyncs, slows down (`* speed`) or
+pauses an animation. This replaced the per-object `Player` map once planned on the `Animator`: the
+state lives on the game entity, which outlives the object it was spawned from.
+
+## Renderer (`render`)
+
+```go
+type Projection interface {
+    TileToScreen(col, row int) (x, y float64)
+    ScreenToTile(x, y float64) (col, row int)
+    Bounds(m *tilemap.Map) image.Rectangle
+    VisibleTiles(m *tilemap.Map, view image.Rectangle) (c0, r0, c1, r1 int) // inclusive
+}
+
+type TextureProvider interface {
+    Texture(ref tilemap.ImageRef) (*ebiten.Image, error)
+}
+
+type MapRenderer struct {
+    Proj       Projection
+    Textures   TextureProvider
+    Anim       *Animator
+    AfterLayer LayerHook // runs after every layer, visible or not
+}
+
+func (r *MapRenderer) Draw(dst *ebiten.Image, m *tilemap.Map, cam Camera)
+func (r *MapRenderer) DrawTile(dst *ebiten.Image, m *tilemap.Map, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions)
+func (r *MapRenderer) Preload(m *tilemap.Map) error
+func (r *MapRenderer) Err() error
+```
+
+Draw walks `Map.Layers` in order with a type switch, skipping invisible layers and accumulating
+group offsets and opacity. For a tile layer it culls to the visible range and draws each cell:
+resolve animation, take the cached sub-image, apply flips, anchor bottom-left in the cell (tiles
+larger than the grid stick out upward, as in Tiled), translate by tile offset, layer offset and
+camera. Object layers draw only tile objects; other objects have no visuals.
+
+`DrawTile` exposes the same tile drawing for game entities: flips and tile offset first, then the
+caller's `op` (position, rotation, scale, color). Entities are drawn from the `AfterLayer` hook so
+they interleave with map layers.
+
+Implementation notes:
+
+- **Sub-image cache.** `SubImage` allocates; tile images are cached in a `[]*ebiten.Image` indexed by
+  `TileID`, reset when a different map is drawn.
+- **Textures via `fs.FS`.** `FSTextures` loads and caches images, errors included. Adapters never
+  touch pixels, so they run headless in tests.
+- **Culling margins.** Tiles can extend outside their cell (larger than the grid, or offset). The
+  renderer computes how far once per map and widens the view before calling `VisibleTiles`.
+- **Flips.** Applied with `GeoM`: diagonal first (rotate 90° + mirror), then horizontal, then
+  vertical, each within the tile's bounds.
+- **Batching.** Ebiten batches consecutive draws from the same atlas. `DrawTriangles` or
+  pre-rendered static layers only if profiling asks for it.
+
+## Load and run lifecycle
+
+Load once: adapter → `tilemap.Map`; create `Animator` and `MapRenderer`; optionally `Preload`.
+Per frame: `anim.Update(render.Tick())` in `Update`, `renderer.Draw(screen, m, cam)` in `Draw`.
+
+## Roadmap
+
+Done: domain model; Tiled adapter (CSV/XML/base64 + zlib/gzip, embedded and external tilesets, atlas
+and image-collection tilesets, animations, flips, offsets, colliders, objects, templates, group and
+image layers, properties); orthogonal projection with culling; shared-clock animation; flips;
+object layers and tile objects; layer opacity and offsets; `DrawTile` for entities.
+
+Next, roughly in order:
+
+1. Isometric projection, which validates the `Projection` abstraction, then draw order as a strategy
+   rather than a subclass.
+2. Text adapter, to validate that the domain is truly format-agnostic.
+3. `.tmj` maps; infinite maps (normalize chunks to one grid on load); zstd.
+4. Worlds (below).
+
+### Worlds
+
+A Tiled `.world` file groups maps in a shared coordinate space. It sits above `Map`:
+
+```go
+type World struct{ Maps []PlacedMap }
+
+type PlacedMap struct {
+    Map    *Map        // or a loader for lazy loading
+    Offset image.Point // world pixels
+}
+```
+
+`tiled.LoadWorld` would produce it; the renderer draws each visible map with its offset added to
+the camera, culling whole maps outside the view. This doesn't change `Map`.
+
+### Deferred
+
+- Staggered and hexagonal projections.
+- Pre-rendering static layers (until profiling asks for it).
+- Fallback rendering for tiles without an image (for the text adapter).
