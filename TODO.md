@@ -20,6 +20,20 @@
       `AfterLayer` of a hidden object layer), trunk blocking.
 - [ ] Document the y-sorting pattern in README.
 
+## Tutorial
+
+- [ ] `docs/TUTORIAL.md`: build a small game step by step, ending close to `examples/coins`.
+  - [ ] Make a map in Tiled: tileset, ground and wall layers, an object layer with a player and coins.
+  - [ ] Load and draw it (`tiled.Load`, `MapRenderer`, `Animator`).
+  - [ ] Player entity from the spawn object, tile movement, wall collision via tile class.
+  - [ ] Walk animation: idle/walk tiles found by properties, local animation time, flip by direction.
+  - [ ] Collect coins: hide objects on pickup, count in a HUD.
+  - [ ] Camera: follow the player, clamp to map bounds, smooth follow, mouse/keyboard pan.
+  - [ ] Zoom: `Layout`-based zoom vs. an offscreen image, pixel-perfect integer zoom, zooming
+        around the cursor, converting mouse position to world and tile coordinates.
+- [ ] Link it from README; keep its code compiling (e.g. per-step examples under
+      `examples/tutorial/`).
+
 ## Performance
 
 - [ ] Reuse one `DrawImageOptions` per layer instead of allocating per tile and per object
