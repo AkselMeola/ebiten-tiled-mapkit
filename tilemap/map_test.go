@@ -220,3 +220,48 @@ func TestTilePositions(t *testing.T) {
 		t.Error("InBounds")
 	}
 }
+
+func TestObjectsAt(t *testing.T) {
+	tile := func(id, x, y, w, h float64) MapObject {
+		return MapObject{ID: int(id), Pos: Vector{x, y}, Size: Vector{w, h}, Visible: true}
+	}
+	hidden := tile(4, 32, 0, 16, 16)
+	hidden.Visible = false
+	m := &Map{Width: 4, Height: 4, TileWidth: 16, TileHeight: 16, Layers: []Layer{
+		&ObjectLayer{Objects: []MapObject{
+			tile(1, 15.5, 0, 16, 16), // slightly off the grid: covers tile 1,0 only
+			tile(2, 0, 16, 32, 32),   // 2x2
+			tile(3, 40, 40, 0, 0),    // point
+			hidden,
+		}},
+	}}
+	ids := func(pos TilePos) []int {
+		var out []int
+		for o := range m.ObjectsAt(pos) {
+			out = append(out, o.ID)
+		}
+		return out
+	}
+
+	cases := []struct {
+		pos  TilePos
+		want []int
+	}{
+		{TilePos{0, 0}, nil},
+		{TilePos{1, 0}, []int{1}},
+		{TilePos{0, 1}, []int{2}},
+		{TilePos{1, 2}, []int{2}},
+		{TilePos{2, 1}, nil},
+		{TilePos{2, 2}, []int{3}},
+		{TilePos{2, 0}, nil},
+	}
+	for _, tc := range cases {
+		if got := ids(tc.pos); !slices.Equal(got, tc.want) {
+			t.Errorf("ObjectsAt(%v) = %v, want %v", tc.pos, got, tc.want)
+		}
+	}
+
+	if got := m.ObjectTile(&m.Layers[0].(*ObjectLayer).Objects[0]); got != (TilePos{1, 0}) {
+		t.Errorf("ObjectTile = %v", got)
+	}
+}

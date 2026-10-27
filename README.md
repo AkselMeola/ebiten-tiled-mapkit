@@ -179,6 +179,21 @@ Positions and sizes are `tilemap.Vector` (`struct{ X, Y float64 }`) with `Add`, 
 `Rotate`. Vectors compare with `==`, and a game's own vector type with the same fields converts
 directly: `myVector(o.Pos)`.
 
+`m.ObjectTile(o)` is the tile an object stands on (the one under its center), and
+`m.ObjectsAt(pos)` yields the visible objects covering a tile, for example to select one with the
+mouse:
+
+```go
+x, y := ebiten.CursorPosition()
+for o := range m.ObjectsAt(renderer.TileAtScreen(x, y, cam)) {
+	if o.Type == "Door" { ... }
+}
+```
+
+An object covers the tiles whose centers its bounds contain, so a 2x2 object is found on all four
+and an object slightly off the grid on one. These look at map objects, which keep the positions
+from Tiled: for objects your game moves, such as spawned characters, keep your own index.
+
 Tile objects are drawn by the renderer. Hide one with `Visible = false`, for example when a
 coin is collected. They are drawn in the layer's *Drawing Order* from Tiled: *Top Down* (the
 default) sorts by `SortY()`, so lower objects overlap higher ones; *Manual* keeps the file order.

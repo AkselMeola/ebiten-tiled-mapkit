@@ -104,6 +104,9 @@ type MapObject struct {
 `Pos` is the top-left corner and rotation turns around it. The Tiled adapter converts, including for
 rotated objects; the conversion is lossless. `Bounds()` returns the rotated AABB and `SortY()` its
 bottom edge for depth sorting. `Center()` and `Foot()` (bottom center) also follow rotation.
+`Map.ObjectTile(o)` is the tile under an object's center; `Map.ObjectsAt(pos)` yields the visible
+objects whose bounds contain the tile's center (points: their tile). It scans, with no index to go
+stale when the game hides objects; games index the objects they move themselves.
 
 **Vectors.** Pixel positions and sizes are `Vector{X, Y float64}` with `Add`, `Sub`, `Scale` and
 `Rotate`. It stays a plain two-field struct so it compares with `==` and converts directly to a

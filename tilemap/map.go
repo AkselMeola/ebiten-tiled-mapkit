@@ -4,6 +4,7 @@ package tilemap
 import (
 	"image"
 	"iter"
+	"math"
 	"time"
 )
 
@@ -183,6 +184,40 @@ func (m *Map) Objects() iter.Seq[*MapObject] {
 				}
 			}
 		}
+	}
+}
+
+// ObjectTile is the tile an object stands on: the one under its center.
+func (m *Map) ObjectTile(o *MapObject) TilePos {
+	return m.pixelToTile(o.Center())
+}
+
+// ObjectsAt yields the visible objects covering pos, in layer order. An object covers a tile when
+// its bounds contain the tile's center; a point covers the tile it is on.
+func (m *Map) ObjectsAt(pos TilePos) iter.Seq[*MapObject] {
+	center := Vector{(float64(pos.Col) + 0.5) * float64(m.TileWidth), (float64(pos.Row) + 0.5) * float64(m.TileHeight)}
+	return func(yield func(*MapObject) bool) {
+		for o := range m.Objects() {
+			if !o.Visible {
+				continue
+			}
+			lo, hi := o.Bounds()
+			covers := center.X >= lo.X && center.X < hi.X && center.Y >= lo.Y && center.Y < hi.Y
+			if lo.X == hi.X || lo.Y == hi.Y {
+				covers = m.ObjectTile(o) == pos
+			}
+			if covers && !yield(o) {
+				return
+			}
+		}
+	}
+}
+
+// pixelToTile is the tile at an object position. Orthogonal only, like the renderer.
+func (m *Map) pixelToTile(v Vector) TilePos {
+	return TilePos{
+		Col: int(math.Floor(v.X / float64(m.TileWidth))),
+		Row: int(math.Floor(v.Y / float64(m.TileHeight))),
 	}
 }
 

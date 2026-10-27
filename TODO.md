@@ -44,6 +44,7 @@
       screen pixels. Use it in `drawObjectLayer`, `DrawObject` and for y-sorting (depth is the
       foot's screen y, not `SortY()`).
 - [ ] Tiled adapter: tile object anchor is bottom-center in isometric maps.
+- [ ] `Map.ObjectTile` and `ObjectsAt`: isometric object positions are in tile-axis space.
 - [ ] Staggered and hexagonal: own projections, later.
 
 ## Performance
