@@ -93,8 +93,18 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 			return tilemap.MapObject{}, err
 		}
 		out.Tile = cell
-		if def := c.m.TileDef(cell.TileID); def != nil && out.Size == (tilemap.Vector{}) {
-			out.Size = tilemap.Vector{X: float64(def.Src.Dx()), Y: float64(def.Src.Dy())}
+		if def := c.m.TileDef(cell.TileID); def != nil {
+			if out.Size == (tilemap.Vector{}) {
+				out.Size = tilemap.Vector{X: float64(def.Src.Dx()), Y: float64(def.Src.Dy())}
+			}
+			// As in Tiled, a tile object inherits its tile's class and properties.
+			if out.Type == "" {
+				out.Type = def.Class
+			}
+			if inherited := maps.Clone(def.Props); inherited != nil {
+				maps.Copy(inherited, out.Props)
+				out.Props = inherited
+			}
 		}
 		anchor := c.objectAnchor(src.GID)
 		offset := tilemap.Vector{X: anchor.X * out.Size.X, Y: anchor.Y * out.Size.Y}

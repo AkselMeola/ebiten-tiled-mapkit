@@ -370,3 +370,40 @@ func TestLoadExampleMap(t *testing.T) {
 		}
 	}
 }
+
+func TestTileObjectInheritsTile(t *testing.T) {
+	fsys := fstest.MapFS{"m.tmx": {Data: []byte(`<map orientation="orthogonal" width="1" height="1" tilewidth="16" tileheight="16" infinite="0">
+ <tileset firstgid="1" name="t" tilewidth="16" tileheight="16" tilecount="1" columns="1">
+  <image source="t.png" width="16" height="16"/>
+  <tile id="0" type="Box">
+   <properties>
+    <property name="weight" type="int" value="3"/>
+    <property name="color" value="red"/>
+   </properties>
+  </tile>
+ </tileset>
+ <objectgroup id="1" name="o">
+  <object id="1" gid="1" x="0" y="16"/>
+  <object id="2" type="Crate" gid="1" x="0" y="16">
+   <properties><property name="color" value="blue"/></properties>
+  </object>
+ </objectgroup>
+</map>`)}}
+	m, err := Load(fsys, "m.tmx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects := m.Layers[0].(*tilemap.ObjectLayer).Objects
+
+	if o := objects[0]; o.Type != "Box" || o.Props.Int("weight") != 3 || o.Props.String("color") != "red" {
+		t.Errorf("plain tile object = %q %v, want the tile's class and properties", o.Type, o.Props)
+	}
+	if o := objects[1]; o.Type != "Crate" || o.Props.Int("weight") != 3 || o.Props.String("color") != "blue" {
+		t.Errorf("overriding tile object = %q %v, want its own class and color", o.Type, o.Props)
+	}
+
+	objects[0].Props["weight"] = 9
+	if m.Tiles[1].Props.Int("weight") != 3 {
+		t.Error("changing an object's properties changed the tile's")
+	}
+}

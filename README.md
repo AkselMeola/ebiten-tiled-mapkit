@@ -156,7 +156,8 @@ standing := renderer.Projection().ScreenToTile(player.Pos.X, player.Pos.Y) // wo
 ### Objects
 
 Object layers hold `MapObject`s: spawn points, triggers, items. They are descriptors; your game
-creates its own entities from them.
+creates its own entities from them. A tile object without its own class takes its tile's class,
+and its tile's properties under its own, as Tiled shows them.
 
 ```go
 for o := range m.Objects() { // every object layer, groups included

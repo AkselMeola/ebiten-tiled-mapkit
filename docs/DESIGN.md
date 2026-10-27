@@ -152,6 +152,9 @@ go-tiled gaps worked around in the adapter:
   the rest (external ones are loaded, embedded ones get their base dir).
 - **Points.** go-tiled doesn't parse `<point/>`; a sizeless object with no other geometry is treated
   as a point.
+- **Tile object inheritance.** A tile object without a class takes its tile's class, and the
+  tile's properties fill in under its own: object, then template, then tile, as in Tiled. The
+  properties are copied, so changing an object's never changes the tile's.
 - **Templates.** go-tiled loads templates but doesn't merge them. The instance's own fields win; a
   template tile GID is remapped to the map tileset with the same resolved source path.
 
