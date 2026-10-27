@@ -124,6 +124,20 @@ func blocked(col, row int) bool {
 }
 ```
 
+To check every layer, for example to build a walkability index once per level:
+
+```go
+for layer := range m.TileLayers() { // groups included, in draw order
+	for i, cell := range layer.Cells { // row by row: col = i % layer.W, row = i / layer.W
+		if def := m.Tile(cell.Tile); def != nil && def.Class == "Wall" {
+			blocked[i] = true
+		}
+	}
+}
+```
+
+`Map.AllLayers()` yields every layer of any kind, for anything else.
+
 `renderer.Projection()` converts between pixels and cells with `ScreenToTile` and `TileToScreen`.
 
 ### Objects

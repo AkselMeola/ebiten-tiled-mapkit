@@ -154,6 +154,17 @@ func walkLayers(layers []Layer, yield func(Layer) bool) bool {
 	return true
 }
 
+// TileLayers yields every tile layer, groups included, in draw order.
+func (m *Map) TileLayers() iter.Seq[*TileLayer] {
+	return func(yield func(*TileLayer) bool) {
+		for l := range m.AllLayers() {
+			if l, ok := l.(*TileLayer); ok && !yield(l) {
+				return
+			}
+		}
+	}
+}
+
 // Objects yields every object of every object layer, in layer order. Changes through the pointer
 // stick, such as hiding a spawned object.
 func (m *Map) Objects() iter.Seq[*MapObject] {

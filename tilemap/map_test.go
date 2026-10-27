@@ -140,6 +140,7 @@ func TestObjects(t *testing.T) {
 		&TileLayer{LayerBase: LayerBase{Name: "ground"}},
 		&GroupLayer{LayerBase: LayerBase{Name: "g"}, Layers: []Layer{
 			&ObjectLayer{LayerBase: LayerBase{Name: "b"}, Objects: []MapObject{{ID: 3}}},
+			&TileLayer{LayerBase: LayerBase{Name: "top"}},
 		}},
 	}}
 
@@ -147,8 +148,16 @@ func TestObjects(t *testing.T) {
 	for l := range m.AllLayers() {
 		names = append(names, l.Base().Name)
 	}
-	if got := strings.Join(names, ","); got != "a,ground,g,b" {
+	if got := strings.Join(names, ","); got != "a,ground,g,b,top" {
 		t.Errorf("AllLayers = %s", got)
+	}
+
+	var tileLayers []string
+	for l := range m.TileLayers() {
+		tileLayers = append(tileLayers, l.Name)
+	}
+	if got := strings.Join(tileLayers, ","); got != "ground,top" {
+		t.Errorf("TileLayers = %s", got)
 	}
 
 	var ids []int
@@ -164,6 +173,9 @@ func TestObjects(t *testing.T) {
 	}
 
 	for range m.Objects() {
+		break
+	}
+	for range m.TileLayers() {
 		break
 	}
 }

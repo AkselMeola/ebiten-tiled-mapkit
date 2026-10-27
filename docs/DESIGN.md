@@ -75,7 +75,8 @@ type Map struct {
 Common fields live in an embedded `LayerBase` (`Name`, `Class`, `Visible`, `Opacity`, offsets,
 `Props`). Kinds: `*TileLayer` (flat row-major `[]Cell`, never one object per tile), `*ObjectLayer`,
 `*ImageLayer`, `*GroupLayer`. Groups are kept, not flattened; their visibility, opacity and offset
-apply to their children at draw time.
+apply to their children at draw time. Iterators walk through groups in draw order, so game code
+needs no type switch: `AllLayers()`, `TileLayers()` and `Objects()`; `Layer(name)` finds one.
 
 ### Objects
 
