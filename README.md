@@ -225,16 +225,22 @@ r.AfterLayer = func(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
 	if l.Base().Name != "objects" {
 		return
 	}
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Rotate(player.angle)
-	op.GeoM.Translate(player.pos.X-cam.X, player.pos.Y-cam.Y)
-	r.DrawTile(dst, tilemap.Cell{TileID: player.tile, Flip: player.flip}, r.Clock()-player.animStart, op)
+	cell := tilemap.Cell{TileID: player.tile, Flip: player.flip}
+	r.DrawTileInWorld(dst, cell, player.pos, cam, r.Clock()-player.animStart, nil)
+
+	faded := &ebiten.DrawImageOptions{}
+	faded.ColorScale.ScaleAlpha(0.5)
+	r.DrawTileInWorld(dst, ghost.cell, ghost.pos, cam, r.Clock(), faded)
 }
 ```
 
 - `AfterLayer` runs after every layer, visible or not, in draw order.
-- `DrawTile` applies the cell's flips and the tile offset, then your `op`. The tile's top-left
-  corner is at the origin of `op.GeoM`.
+- `DrawTileInWorld` draws a tile with its top-left corner at a world position, the same kind of
+  position as `MapObject.Pos`. The renderer applies the camera, the cell's flips and the tile
+  offset. Options may be nil: their colors and blending apply as given, and their `GeoM` adjusts
+  the tile around its top-left corner (scale, rotate) before it is placed.
+- `DrawTileOnScreen` takes screen coordinates instead: the tile's top-left corner is at the origin
+  of `op.GeoM`, with no camera. Use it for HUDs and menus.
 - The time argument picks the animation frame. `r.Clock()` keeps the tile in sync with the map,
   and `r.Clock() - start` plays the animation from its first frame since `start`. Restarting,
   pausing or changing speed is just changing that number.

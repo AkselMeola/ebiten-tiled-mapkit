@@ -11,12 +11,12 @@ type MapObject struct {
 	Rotation   float64
 	Visible    bool
 	Opacity    float64
-	Tile       Cell
+	Cell       Cell
 	Shape      Shape
 	Props      Properties
 }
 
-func (o *MapObject) IsTile() bool { return !o.Tile.Empty() }
+func (o *MapObject) IsTile() bool { return !o.Cell.Empty() }
 
 // ToWorld returns the point at offset local from the top-left corner, rotated with the object.
 func (o *MapObject) ToWorld(local Vector) Vector { return o.Pos.Add(local.Rotate(o.Rotation)) }

@@ -227,7 +227,7 @@ func TestLoad(t *testing.T) {
 		}
 
 		crate := objs.Objects[0]
-		if crate.Tile != (tilemap.Cell{TileID: 5, Flip: tilemap.FlipH}) || crate.Type != "Box" || !crate.Visible {
+		if crate.Cell != (tilemap.Cell{TileID: 5, Flip: tilemap.FlipH}) || crate.Type != "Box" || !crate.Visible {
 			t.Errorf("crate = %+v", crate)
 		}
 		if crate.Opacity != 0.5 || objs.Objects[1].Opacity != 1 {
@@ -249,7 +249,7 @@ func TestLoad(t *testing.T) {
 		}
 
 		tpl := objs.Objects[4]
-		if tpl.Name != "tpl-crate" || tpl.Tile.TileID != 5 || tpl.Size != (tilemap.Vector{X: 16, Y: 24}) || tpl.Pos.X != 64 {
+		if tpl.Name != "tpl-crate" || tpl.Cell.TileID != 5 || tpl.Size != (tilemap.Vector{X: 16, Y: 24}) || tpl.Pos.X != 64 {
 			t.Errorf("template object = %+v", tpl)
 		}
 		if tpl.Props.Int("hp") != 9 || tpl.Props.String("kind") != "wood" {

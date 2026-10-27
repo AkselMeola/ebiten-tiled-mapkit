@@ -17,7 +17,7 @@ import (
 
 func TestDrawOrder(t *testing.T) {
 	tileAt := func(y float64) tilemap.MapObject {
-		return tilemap.MapObject{Pos: tilemap.Vector{Y: y}, Size: tilemap.Vector{X: 16, Y: 16}, Visible: true, Tile: tilemap.Cell{TileID: 1}}
+		return tilemap.MapObject{Pos: tilemap.Vector{Y: y}, Size: tilemap.Vector{X: 16, Y: 16}, Visible: true, Cell: tilemap.Cell{TileID: 1}}
 	}
 	hidden := tileAt(0)
 	hidden.Visible = false
@@ -132,6 +132,27 @@ func TestTileAtScreen(t *testing.T) {
 	r := &MapRenderer{m: m, proj: NewOrthogonal(m)}
 	if got := r.TileAtScreen(20, 5, Camera{X: 15.6, Y: 0}); got != (tilemap.TilePos{Col: 2, Row: 0}) {
 		t.Errorf("TileAtScreen = %v", got)
+	}
+}
+
+func TestInWorld(t *testing.T) {
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Scale(2, 2)
+	op.ColorScale.ScaleAlpha(0.5)
+
+	placed := inWorld(op, tilemap.Vector{X: 100, Y: 50}, Camera{X: 10.4, Y: 20.6})
+	if x, y := placed.GeoM.Apply(1, 1); x != 92 || y != 31 {
+		t.Errorf("tile pixel 1,1 at %v,%v, want 92,31: scaled first, then placed", x, y)
+	}
+	if placed.ColorScale.A() != 0.5 {
+		t.Errorf("alpha = %v, want 0.5", placed.ColorScale.A())
+	}
+	if x, _ := op.GeoM.Apply(1, 1); x != 2 {
+		t.Error("caller's options changed")
+	}
+	plain := inWorld(nil, tilemap.Vector{X: 3, Y: 4}, Camera{})
+	if x, y := plain.GeoM.Apply(0, 0); x != 3 || y != 4 {
+		t.Errorf("nil options: %v,%v", x, y)
 	}
 }
 

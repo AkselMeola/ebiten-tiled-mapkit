@@ -107,7 +107,7 @@ func (g *Game) spawnFromObjects() {
 		switch object.Type {
 		case "Player":
 			// The player becomes a game entity. Hide the map object so it isn't drawn twice.
-			g.player = Player{position: object.Pos, target: object.Pos, tile: object.Tile.TileID}
+			g.player = Player{position: object.Pos, target: object.Pos, tile: object.Cell.TileID}
 			object.Visible = false
 		case "Coin":
 			// Coins stay on the map; the renderer keeps drawing and animating them.
@@ -219,10 +219,10 @@ func (g *Game) drawPlayer(screen *ebiten.Image, layer tilemap.Layer, camera rend
 		animationTime = 0
 	}
 
-	options := &ebiten.DrawImageOptions{}
-	options.GeoM.Translate(player.position.X-camera.X, player.position.Y-camera.Y)
-	// DrawTile draws a map tile for the game's own entity, with flips and animation applied.
-	g.renderer.DrawTile(screen, tilemap.Cell{TileID: player.tile, Flip: player.flip}, animationTime, options)
+	// DrawTileInWorld draws a map tile at the player's world position: the renderer applies the
+	// camera, the flip and the animation frame.
+	cell := tilemap.Cell{TileID: player.tile, Flip: player.flip}
+	g.renderer.DrawTileInWorld(screen, cell, player.position, camera, animationTime, nil)
 }
 
 // Layout makes the game's screen exactly the map's size; Ebiten scales it up to the window.

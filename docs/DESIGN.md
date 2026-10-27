@@ -93,7 +93,7 @@ type MapObject struct {
     Rotation   float64 // degrees, clockwise, around the top-left corner
     Visible    bool
     Opacity    float64
-    Tile       Cell    // zero if not a tile object
+    Cell       Cell    // the tile of a tile object; zero otherwise
     Shape      Shape   // rect, ellipse, point, polygon, polyline
     Props      Properties
 }
@@ -214,7 +214,8 @@ func (r *MapRenderer) Clock() time.Duration
 func (r *MapRenderer) Projection() Projection
 func (r *MapRenderer) TileAtScreen(x, y int, cam Camera) tilemap.TilePos // e.g. under the mouse
 func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera)
-func (r *MapRenderer) DrawTile(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions)
+func (r *MapRenderer) DrawTileInWorld(dst *ebiten.Image, cell tilemap.Cell, pos tilemap.Vector, cam Camera, t time.Duration, op *ebiten.DrawImageOptions)
+func (r *MapRenderer) DrawTileOnScreen(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions)
 ```
 
 **One renderer per map.** The constructor picks the projection from `Map.Orientation` (orthogonal,
@@ -229,14 +230,17 @@ group offsets and opacity. The camera is rounded to whole pixels first, and `Aft
 the rounded camera so entities stay aligned with the map. For a tile layer it culls to the visible
 range and adds one quad per cell to a vertex batch: resolve animation, anchor bottom-left in the
 cell (tiles larger than the grid stick out upward, as in Tiled), add tile offset, layer offset and
-camera, and flip the corners as `DrawTile` does. Object layers draw only tile objects; other
+camera, and flip the corners as `DrawTileOnScreen` does. Object layers draw only tile objects; other
 objects have no visuals. An object layer's `DrawOrder` is `DrawOrderTopDown` (sorted by `SortY()`,
 stable; the zero value and Tiled's default) or `DrawOrderIndex` (file order). Sorting happens every
 frame so objects the game moves stay correct; the index buffer is reused.
 
-`DrawTile` exposes the same tile drawing for game entities: flips and tile offset first, then the
-caller's `op` (position, rotation, scale, color). Entities are drawn from the `AfterLayer` hook so
-they interleave with map layers.
+Game entities use the same tile drawing, named by coordinate space. `DrawTileInWorld` takes a world
+position and the camera; the renderer places the tile (rounding the camera as `Draw` does), so
+games never convert world to screen themselves and stay correct when other projections arrive. Its
+`op.GeoM` is tile-local, applied before placing. `DrawTileOnScreen` takes `op.GeoM` as the whole
+transform to the screen, for HUDs and custom transforms. Both apply flips and tile offset first.
+Entities are drawn from the `AfterLayer` hook so they interleave with map layers.
 
 Implementation notes:
 
@@ -256,8 +260,8 @@ Implementation notes:
   tileset bleed in. Quads are placed on whole pixels.
 - **Flips.** One implementation, `applyFlips` on a `GeoM`: diagonal first (transpose), then
   horizontal, then vertical, within the tile's bounds. Batched quads apply it to their corners.
-- **Not batched.** Tile objects (few, rotated, scaled, sorted), image layers and `DrawTile` use
-  `DrawImage`. Pre-rendering static layers only if profiling asks for it.
+- **Not batched.** Tile objects (few, rotated, scaled, sorted), image layers and the `DrawTile*`
+  methods use `DrawImage`. Pre-rendering static layers only if profiling asks for it.
 
 ## Load and run lifecycle
 
@@ -270,7 +274,7 @@ Per frame: `renderer.Update()` in `Update`, `renderer.Draw(screen, cam)` in `Dra
 Done: domain model; Tiled adapter (CSV/XML/base64 + zlib/gzip, embedded and external tilesets, atlas
 and image-collection tilesets, animations, flips, offsets, colliders, objects, templates, group and
 image layers, properties); orthogonal projection with culling; shared-clock animation; flips;
-object layers and tile objects; layer opacity and offsets; `DrawTile` for entities.
+object layers and tile objects; layer opacity and offsets; `DrawTileInWorld` and `DrawTileOnScreen` for entities.
 
 Next, roughly in order:
 

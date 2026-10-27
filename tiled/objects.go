@@ -92,7 +92,7 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 		if err != nil {
 			return tilemap.MapObject{}, err
 		}
-		out.Tile = cell
+		out.Cell = cell
 		if def := c.m.TileDef(cell.TileID); def != nil {
 			if out.Size == (tilemap.Vector{}) {
 				out.Size = tilemap.Vector{X: float64(def.Src.Dx()), Y: float64(def.Src.Dy())}

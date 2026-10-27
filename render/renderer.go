@@ -192,7 +192,7 @@ func drawOrder(l *tilemap.ObjectLayer, buf []drawItem) []drawItem {
 	return buf
 }
 
-// appendQuad adds the tile at src with its top-left corner at x, y, flipped as DrawTile does.
+// appendQuad adds the tile at src with its top-left corner at x, y, flipped as DrawTileOnScreen does.
 func (r *MapRenderer) appendQuad(x, y float64, src image.Rectangle, flip tilemap.Flip, alpha float32) {
 	var g ebiten.GeoM
 	applyFlips(&g, flip, src)
@@ -225,26 +225,46 @@ func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer,
 	r.order = drawOrder(l, r.order)
 	for _, item := range r.order {
 		o := &l.Objects[item.index]
-		id, img := r.frame(o.Tile.TileID, r.clock)
+		id, img := r.frame(o.Cell.TileID, r.clock)
 		if img == nil {
 			continue
 		}
 
 		op := &ebiten.DrawImageOptions{}
-		w, h := flippedSize(o.Tile.Flip, img.Bounds())
+		w, h := flippedSize(o.Cell.Flip, img.Bounds())
 		if o.Size.X > 0 && o.Size.Y > 0 && w > 0 && h > 0 {
 			op.GeoM.Scale(o.Size.X/w, o.Size.Y/h)
 		}
 		op.GeoM.Rotate(o.Rotation * math.Pi / 180)
 		op.GeoM.Translate(o.Pos.X+ox-cam.X, o.Pos.Y+oy-cam.Y)
 		op.ColorScale.ScaleAlpha(float32(alpha * o.Opacity))
-		r.drawTile(dst, img, &r.m.Tiles[id], o.Tile.Flip, op)
+		r.drawTile(dst, img, &r.m.Tiles[id], o.Cell.Flip, op)
 	}
 }
 
-// DrawTile draws cell's tile at animation time t, with its top-left corner at the origin of op.GeoM.
-// Flips and the tile offset are applied before op; op may be nil.
-func (r *MapRenderer) DrawTile(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions) {
+// DrawTileInWorld draws cell's tile at animation time t with its top-left corner at world position
+// pos, seen from cam, for game entities. op may be nil; its GeoM adjusts the tile around its
+// top-left corner before placing, and its colors and blending apply as given.
+func (r *MapRenderer) DrawTileInWorld(dst *ebiten.Image, cell tilemap.Cell, pos tilemap.Vector, cam Camera, t time.Duration, op *ebiten.DrawImageOptions) {
+	placed := inWorld(op, pos, cam)
+	r.DrawTileOnScreen(dst, cell, t, &placed)
+}
+
+// inWorld copies op, so the caller's stays unchanged, and adds the move to the screen. The camera
+// is rounded as in Draw, so entities line up with the map.
+func inWorld(op *ebiten.DrawImageOptions, pos tilemap.Vector, cam Camera) ebiten.DrawImageOptions {
+	var placed ebiten.DrawImageOptions
+	if op != nil {
+		placed = *op
+	}
+	placed.GeoM.Translate(pos.X-math.Round(cam.X), pos.Y-math.Round(cam.Y))
+	return placed
+}
+
+// DrawTileOnScreen draws cell's tile at animation time t, with its top-left corner at the origin
+// of op.GeoM in screen pixels, for HUDs and custom transforms. Flips and the tile offset are
+// applied before op; op may be nil.
+func (r *MapRenderer) DrawTileOnScreen(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions) {
 	id, img := r.frame(cell.TileID, t)
 	if img == nil {
 		return
