@@ -2,6 +2,14 @@
 
 Load [Tiled](https://www.mapeditor.org/) maps and draw them with [Ebitengine](https://ebitengine.org/).
 
+> [!WARNING]
+> Work in progress. The API may change between minor versions, and the library still needs battle
+> testing in real games. It is not yet meant for wide use.
+
+mapkit aims to be a generic tile map adapter and renderer: map formats are loaded through adapters
+into one plain data model, which a renderer draws with Ebiten. Tiled is the first adapter. It is
+meant to stay lightweight: map loading and drawing only, no game logic, physics or entity system.
+
 ```
 .tmx file ──► tiled.Load ──► tilemap.Map ──► render.MapRenderer.Draw ──► screen
               (translate)     (plain data)    (draw)

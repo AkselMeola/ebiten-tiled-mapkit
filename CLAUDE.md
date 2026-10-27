@@ -5,6 +5,8 @@ Go library: Tiled map loading and Ebiten rendering. Module `github.com/AkselMeol
 Read `docs/DESIGN.md` before changing the domain model, an adapter or the renderer. It holds the
 architecture, the decisions behind it and the roadmap. Update it when a decision changes.
 
+Planned work is in `TODO.md`. Tick items off as they land.
+
 ## Invariants
 
 - `tilemap` imports nothing from this module, Ebiten or Tiled. go-tiled types never leave `tiled`.
@@ -13,6 +15,7 @@ architecture, the decisions behind it and the roadmap. Update it when a decision
 - Animation is a function of time. No per-tile state, no wall-clock time in `Draw`.
 - Adapters never load pixels; `render` does, through a `TextureProvider`.
 - The library holds no game logic. Game-specific behavior belongs in the example or the game.
+- Stay lightweight: map loading and drawing only. Prefer a small hook or helper over a framework.
 
 ## Commands
 
