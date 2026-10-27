@@ -2,6 +2,14 @@
 
 ## v0.2.0: depth and objects
 
+- [ ] Rename `tilemap.Point` to `tilemap.Vector` (`struct{ X, Y float64 }`) with `Add`, `Sub` and
+      `Scale`. Breaking change.
+- [ ] `MapObject`: `X, Y, W, H` → `Pos, Size Vector`; same for `Shape`; polygon points become
+      `[]Vector`. Tile coordinates stay `col, row int`, pixel rectangles stay `image.Rectangle`.
+- [ ] New helpers (`Foot()`, `Center()`) return `Vector`. Keep the field layout identical so games
+      can convert to their own vector type (`grid.Vector(o.Pos)`).
+- [ ] Update README, `docs/DESIGN.md`, the coins example and the kastimees sandbox.
+
 - [ ] Object layer draw order: read Tiled's `draworder` into `ObjectLayer`. With `topdown` (Tiled's
       default) the renderer sorts by `SortY()`; with `index` it keeps file order.
 - [ ] `MapRenderer.DrawObject(dst, m, obj, cam)`: draws one map object exactly as the renderer does
