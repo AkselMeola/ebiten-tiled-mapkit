@@ -45,8 +45,8 @@ type TileID uint32 // 0 = empty cell; Tiles[0] is a reserved sentinel
 type Flip uint8 // FlipH | FlipV | FlipD (diagonal; with H/V gives 90° rotations)
 
 type Cell struct {
-    Tile TileID
-    Flip Flip
+    TileID TileID
+    Flip   Flip
 }
 
 type TileDef struct {
@@ -76,7 +76,8 @@ Common fields live in an embedded `LayerBase` (`Name`, `Class`, `Visible`, `Opac
 `Props`). Kinds: `*TileLayer` (flat row-major `[]Cell`, never one object per tile), `*ObjectLayer`,
 `*ImageLayer`, `*GroupLayer`. Groups are kept, not flattened; their visibility, opacity and offset
 apply to their children at draw time. Iterators walk through groups in draw order, so game code
-needs no type switch: `AllLayers()`, `TileLayers()` and `Objects()`; `Layer(name)` finds one.
+needs no type switch: `AllLayers()`, `TileLayers()` and `Objects()`. `Layer(name)` finds one
+layer and `TileDef(id)` looks up a tile.
 
 ### Objects
 
@@ -106,8 +107,11 @@ bottom edge for depth sorting. `Center()` and `Foot()` (bottom center) also foll
 
 **Vectors.** Pixel positions and sizes are `Vector{X, Y float64}` with `Add`, `Sub`, `Scale` and
 `Rotate`. It stays a plain two-field struct so it compares with `==` and converts directly to a
-game's own vector type with the same fields. Tile coordinates stay `col, row int` and pixel
-rectangles stay `image.Rectangle`.
+game's own vector type with the same fields. Grid positions are a separate type,
+`TilePos{Col, Row int}` with `Add` and the steps `Up`, `Down`, `Left`, `Right`, so pixel and tile
+positions can't be mixed up. Tile layers convert with `At`, `Index`, `Pos` and yield cells with
+positions from `All()`; `Map.InBounds` checks the map size. Pixel rectangles stay
+`image.Rectangle`.
 
 ### Properties
 
@@ -183,8 +187,8 @@ state lives on the game entity, which outlives the object it was spawned from.
 
 ```go
 type Projection interface {
-    TileToScreen(col, row int) (x, y float64)
-    ScreenToTile(x, y float64) (col, row int)
+    TileToScreen(p tilemap.TilePos) (x, y float64)    // world pixels
+    ScreenToTile(x, y float64) tilemap.TilePos       // from world pixels
     Bounds(m *tilemap.Map) image.Rectangle
     VisibleTiles(m *tilemap.Map, view image.Rectangle) (c0, r0, c1, r1 int) // inclusive
 }
@@ -202,6 +206,7 @@ func NewMapRenderer(source ImageSource, m *tilemap.Map) (*MapRenderer, error)
 func (r *MapRenderer) Update()
 func (r *MapRenderer) Clock() time.Duration
 func (r *MapRenderer) Projection() Projection
+func (r *MapRenderer) TileAtScreen(x, y int, cam Camera) tilemap.TilePos // e.g. under the mouse
 func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera)
 func (r *MapRenderer) DrawTile(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions)
 ```

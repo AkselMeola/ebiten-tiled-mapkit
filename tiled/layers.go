@@ -112,7 +112,7 @@ func (c *converter) tileLayer(l *gotiled.Layer) (*tilemap.TileLayer, error) {
 		if t.DiagonalFlip {
 			flip |= tilemap.FlipD
 		}
-		out.Cells[i] = tilemap.Cell{Tile: id, Flip: flip}
+		out.Cells[i] = tilemap.Cell{TileID: id, Flip: flip}
 	}
 
 	return out, nil

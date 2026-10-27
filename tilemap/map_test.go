@@ -1,6 +1,7 @@
 package tilemap
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"strings"
@@ -177,5 +178,45 @@ func TestObjects(t *testing.T) {
 	}
 	for range m.TileLayers() {
 		break
+	}
+}
+
+func TestTilePositions(t *testing.T) {
+	l := &TileLayer{W: 3, H: 2, Cells: []Cell{{TileID: 1}, {}, {TileID: 2}, {}, {TileID: 3}, {}}}
+	p := TilePos{Col: 1, Row: 1}
+
+	if got := p.Add(Right).Add(Up); got != (TilePos{Col: 2, Row: 0}) {
+		t.Errorf("Add = %v", got)
+	}
+	if got := l.At(p); got.TileID != 3 {
+		t.Errorf("At = %v", got)
+	}
+	if got := l.At(p.Add(Down)); !got.Empty() {
+		t.Errorf("At outside = %v", got)
+	}
+	if got := l.Index(p); got != 4 {
+		t.Errorf("Index = %d", got)
+	}
+	if got := l.Index(TilePos{Col: 3, Row: 0}); got != -1 {
+		t.Errorf("Index outside = %d", got)
+	}
+	if got := l.Pos(4); got != p {
+		t.Errorf("Pos = %v", got)
+	}
+
+	var cells []string
+	for pos, c := range l.All() {
+		cells = append(cells, fmt.Sprintf("%d,%d:%d", pos.Col, pos.Row, c.TileID))
+	}
+	if got := strings.Join(cells, " "); got != "0,0:1 2,0:2 1,1:3" {
+		t.Errorf("All = %s", got)
+	}
+	for range l.All() {
+		break
+	}
+
+	m := &Map{Width: 3, Height: 2}
+	if !m.InBounds(p) || m.InBounds(p.Add(Down)) || m.InBounds(TilePos{Col: -1}) {
+		t.Error("InBounds")
 	}
 }

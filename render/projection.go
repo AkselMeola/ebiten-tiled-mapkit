@@ -9,8 +9,10 @@ import (
 )
 
 type Projection interface {
-	TileToScreen(col, row int) (x, y float64)
-	ScreenToTile(x, y float64) (col, row int)
+	// TileToScreen is p's top-left corner in world pixels.
+	TileToScreen(p tilemap.TilePos) (x, y float64)
+	// ScreenToTile is the tile at world pixel x, y.
+	ScreenToTile(x, y float64) tilemap.TilePos
 	Bounds(m *tilemap.Map) image.Rectangle
 	// VisibleTiles returns the inclusive tile range covering view; empty when c0 > c1 or r0 > r1.
 	VisibleTiles(m *tilemap.Map, view image.Rectangle) (c0, r0, c1, r1 int)
@@ -24,12 +26,15 @@ func NewOrthogonal(m *tilemap.Map) Orthogonal {
 	return Orthogonal{TileWidth: m.TileWidth, TileHeight: m.TileHeight}
 }
 
-func (o Orthogonal) TileToScreen(col, row int) (x, y float64) {
-	return float64(col * o.TileWidth), float64(row * o.TileHeight)
+func (o Orthogonal) TileToScreen(p tilemap.TilePos) (x, y float64) {
+	return float64(p.Col * o.TileWidth), float64(p.Row * o.TileHeight)
 }
 
-func (o Orthogonal) ScreenToTile(x, y float64) (col, row int) {
-	return floorDiv(int(math.Floor(x)), o.TileWidth), floorDiv(int(math.Floor(y)), o.TileHeight)
+func (o Orthogonal) ScreenToTile(x, y float64) tilemap.TilePos {
+	return tilemap.TilePos{
+		Col: floorDiv(int(math.Floor(x)), o.TileWidth),
+		Row: floorDiv(int(math.Floor(y)), o.TileHeight),
+	}
 }
 
 func (o Orthogonal) Bounds(m *tilemap.Map) image.Rectangle {

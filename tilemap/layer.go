@@ -1,5 +1,7 @@
 package tilemap
 
+import "iter"
+
 type Layer interface {
 	layer()
 	Base() *LayerBase
@@ -22,11 +24,36 @@ type TileLayer struct {
 	Cells []Cell
 }
 
-func (l *TileLayer) At(col, row int) Cell {
-	if col < 0 || row < 0 || col >= l.W || row >= l.H {
-		return Cell{}
+// At returns the cell at p, empty outside the layer.
+func (l *TileLayer) At(p TilePos) Cell {
+	if i := l.Index(p); i >= 0 {
+		return l.Cells[i]
 	}
-	return l.Cells[row*l.W+col]
+	return Cell{}
+}
+
+// Index is p's index in Cells, -1 outside the layer.
+func (l *TileLayer) Index(p TilePos) int {
+	if p.Col < 0 || p.Row < 0 || p.Col >= l.W || p.Row >= l.H {
+		return -1
+	}
+	return p.Row*l.W + p.Col
+}
+
+// Pos is the position of Cells[i].
+func (l *TileLayer) Pos(i int) TilePos {
+	return TilePos{i % l.W, i / l.W}
+}
+
+// All yields every non-empty cell with its position, row by row.
+func (l *TileLayer) All() iter.Seq2[TilePos, Cell] {
+	return func(yield func(TilePos, Cell) bool) {
+		for i, c := range l.Cells {
+			if !c.Empty() && !yield(l.Pos(i), c) {
+				return
+			}
+		}
+	}
 }
 
 type ObjectLayer struct {

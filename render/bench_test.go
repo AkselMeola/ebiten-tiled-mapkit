@@ -28,7 +28,7 @@ func benchMap() *tilemap.Map {
 	for layer := range 3 {
 		cells := make([]tilemap.Cell, size*size)
 		for i := range cells {
-			cells[i] = tilemap.Cell{Tile: tilemap.TileID(1 + (i*7+layer)%(cols*cols))}
+			cells[i] = tilemap.Cell{TileID: tilemap.TileID(1 + (i*7+layer)%(cols*cols))}
 		}
 		m.Layers = append(m.Layers, &tilemap.TileLayer{LayerBase: tilemap.LayerBase{Visible: true, Opacity: 1}, W: size, H: size, Cells: cells})
 	}

@@ -194,7 +194,7 @@ func TestLoad(t *testing.T) {
 
 	t.Run("tile layers", func(t *testing.T) {
 		ground := m.Layers[0].(*tilemap.TileLayer)
-		want := []tilemap.Cell{{Tile: 1}, {Tile: 2}, {}, {Tile: 4}}
+		want := []tilemap.Cell{{TileID: 1}, {TileID: 2}, {}, {TileID: 4}}
 		for i, c := range want {
 			if ground.Cells[i] != c {
 				t.Errorf("ground[%d] = %+v, want %+v", i, ground.Cells[i], c)
@@ -206,7 +206,7 @@ func TestLoad(t *testing.T) {
 			t.Error("group should be invisible")
 		}
 		top := g.Layers[0].(*tilemap.TileLayer)
-		want = []tilemap.Cell{{Tile: 1}, {Tile: 2, Flip: tilemap.FlipH}, {}, {Tile: 3}}
+		want = []tilemap.Cell{{TileID: 1}, {TileID: 2, Flip: tilemap.FlipH}, {}, {TileID: 3}}
 		for i, c := range want {
 			if top.Cells[i] != c {
 				t.Errorf("top[%d] = %+v, want %+v", i, top.Cells[i], c)
@@ -227,7 +227,7 @@ func TestLoad(t *testing.T) {
 		}
 
 		crate := objs.Objects[0]
-		if crate.Tile != (tilemap.Cell{Tile: 5, Flip: tilemap.FlipH}) || crate.Type != "Box" || !crate.Visible {
+		if crate.Tile != (tilemap.Cell{TileID: 5, Flip: tilemap.FlipH}) || crate.Type != "Box" || !crate.Visible {
 			t.Errorf("crate = %+v", crate)
 		}
 		if crate.Opacity != 0.5 || objs.Objects[1].Opacity != 1 {
@@ -249,7 +249,7 @@ func TestLoad(t *testing.T) {
 		}
 
 		tpl := objs.Objects[4]
-		if tpl.Name != "tpl-crate" || tpl.Tile.Tile != 5 || tpl.Size != (tilemap.Vector{X: 16, Y: 24}) || tpl.Pos.X != 64 {
+		if tpl.Name != "tpl-crate" || tpl.Tile.TileID != 5 || tpl.Size != (tilemap.Vector{X: 16, Y: 24}) || tpl.Pos.X != 64 {
 			t.Errorf("template object = %+v", tpl)
 		}
 		if tpl.Props.Int("hp") != 9 || tpl.Props.String("kind") != "wood" {
@@ -352,7 +352,7 @@ func TestLoadExampleMap(t *testing.T) {
 	if !ok {
 		t.Fatal("ground layer missing")
 	}
-	if def := m.Tile(ground.At(0, 0).Tile); def == nil || def.Class != "Wall" {
+	if def := m.TileDef(ground.At(tilemap.TilePos{}).TileID); def == nil || def.Class != "Wall" {
 		t.Errorf("corner tile = %+v, want a Wall", def)
 	}
 

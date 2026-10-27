@@ -32,11 +32,11 @@ const (
 )
 
 type Cell struct {
-	Tile TileID
-	Flip Flip
+	TileID TileID
+	Flip   Flip
 }
 
-func (c Cell) Empty() bool { return c.Tile == 0 }
+func (c Cell) Empty() bool { return c.TileID == 0 }
 
 type TileDef struct {
 	Image     ImageRef
@@ -122,12 +122,17 @@ type Map struct {
 	Props                 Properties
 }
 
-// Tile returns nil for empty or unknown ids.
-func (m *Map) Tile(id TileID) *TileDef {
+// TileDef returns nil for empty or unknown ids.
+func (m *Map) TileDef(id TileID) *TileDef {
 	if id == 0 || int(id) >= len(m.Tiles) {
 		return nil
 	}
 	return &m.Tiles[id]
+}
+
+// InBounds reports whether p is on the map.
+func (m *Map) InBounds(p TilePos) bool {
+	return p.Col >= 0 && p.Row >= 0 && p.Col < m.Width && p.Row < m.Height
 }
 
 // Layer finds a layer by name, depth-first through groups.

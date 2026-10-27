@@ -112,33 +112,46 @@ go run ./examples/coins
 
 ### Tiles and collision
 
-Each tile layer is a grid of `Cell`s. A cell's `TileID` indexes `Map.Tiles`, whose `TileDef` carries
-the tile's class (set as *Class* or *Type* on a tile in Tiled) and custom properties.
+Each tile layer is a grid of `Cell`s. A cell's `TileID` indexes `Map.Tiles`; `m.TileDef(id)` returns
+the `TileDef` with the tile's class (set as *Class* or *Type* on a tile in Tiled) and custom
+properties. Positions on the grid are `tilemap.TilePos{Col, Row}`, comparable and usable as map keys.
 
 ```go
 ground := m.Layer("ground").(*tilemap.TileLayer)
 
-func blocked(col, row int) bool {
-	def := m.Tile(ground.At(col, row).Tile) // nil for empty cells and outside the layer
+func blocked(pos tilemap.TilePos) bool {
+	def := m.TileDef(ground.At(pos).TileID) // nil for empty cells and outside the layer
 	return def == nil || def.Class == "Wall" || def.Props.Bool("solid")
 }
+
+if !blocked(playerTile.Add(tilemap.Right)) { ... } // Up, Down, Left, Right
 ```
 
-To check every layer, for example to build a walkability index once per level:
+To check every layer, for example to build a wall index once per level:
 
 ```go
+walls := map[tilemap.TilePos]bool{}
 for layer := range m.TileLayers() { // groups included, in draw order
-	for i, cell := range layer.Cells { // row by row: col = i % layer.W, row = i / layer.W
-		if def := m.Tile(cell.Tile); def != nil && def.Class == "Wall" {
-			blocked[i] = true
+	for pos, cell := range layer.All() { // non-empty cells, row by row
+		if m.TileDef(cell.TileID).Class == "Wall" {
+			walls[pos] = true
 		}
 	}
 }
 ```
 
-`Map.AllLayers()` yields every layer of any kind, for anything else.
+- `layer.Index(pos)` and `layer.Pos(i)` convert between positions and indexes in `layer.Cells`.
+- `m.InBounds(pos)` checks a position against the map size.
+- `Map.AllLayers()` yields every layer of any kind, for anything else.
 
-`renderer.Projection()` converts between pixels and cells with `ScreenToTile` and `TileToScreen`.
+Converting pixels to tiles:
+
+```go
+x, y := ebiten.CursorPosition()
+hovered := renderer.TileAtScreen(x, y, cam) // the tile drawn under the mouse
+
+standing := renderer.Projection().ScreenToTile(player.Pos.X, player.Pos.Y) // world pixels
+```
 
 ### Objects
 
@@ -199,7 +212,7 @@ r.AfterLayer = func(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Rotate(player.angle)
 	op.GeoM.Translate(player.pos.X-cam.X, player.pos.Y-cam.Y)
-	r.DrawTile(dst, tilemap.Cell{Tile: player.tile, Flip: player.flip}, r.Clock()-player.animStart, op)
+	r.DrawTile(dst, tilemap.Cell{TileID: player.tile, Flip: player.flip}, r.Clock()-player.animStart, op)
 }
 ```
 

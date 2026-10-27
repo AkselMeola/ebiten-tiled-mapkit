@@ -93,7 +93,7 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 			return tilemap.MapObject{}, err
 		}
 		out.Tile = cell
-		if def := c.m.Tile(cell.Tile); def != nil && out.Size == (tilemap.Vector{}) {
+		if def := c.m.TileDef(cell.TileID); def != nil && out.Size == (tilemap.Vector{}) {
 			out.Size = tilemap.Vector{X: float64(def.Src.Dx()), Y: float64(def.Src.Dy())}
 		}
 		anchor := c.objectAnchor(src.GID)
@@ -122,7 +122,7 @@ func (c *converter) cell(gid uint32) (tilemap.Cell, error) {
 	if gid&flipDMask != 0 {
 		flip |= tilemap.FlipD
 	}
-	return tilemap.Cell{Tile: id, Flip: flip}, nil
+	return tilemap.Cell{TileID: id, Flip: flip}, nil
 }
 
 // objectAnchor is where Tiled anchors a tile object, as fractions of its size.

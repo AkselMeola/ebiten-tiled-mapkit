@@ -90,6 +90,12 @@ func Tick() time.Duration {
 	return time.Second / time.Duration(ebiten.TPS())
 }
 
+// TileAtScreen is the tile drawn at screen pixel x, y with camera cam, such as the one under the
+// mouse: x, y := ebiten.CursorPosition().
+func (r *MapRenderer) TileAtScreen(x, y int, cam Camera) tilemap.TilePos {
+	return r.proj.ScreenToTile(float64(x)+math.Round(cam.X), float64(y)+math.Round(cam.Y))
+}
+
 // Draw draws the map with the camera rounded to whole pixels; AfterLayer receives the rounded camera.
 func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera) {
 	cam = Camera{X: math.Round(cam.X), Y: math.Round(cam.Y)}
@@ -139,7 +145,7 @@ func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam
 			if cell.Empty() {
 				continue
 			}
-			id, img := r.frame(cell.Tile, t)
+			id, img := r.frame(cell.TileID, t)
 			if img == nil {
 				continue
 			}
@@ -150,7 +156,7 @@ func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam
 			def := &r.m.Tiles[id]
 			src := img.Bounds()
 			_, h := flippedSize(cell.Flip, src)
-			x, y := r.proj.TileToScreen(col, row)
+			x, y := r.proj.TileToScreen(tilemap.TilePos{Col: col, Row: row})
 			r.appendQuad(
 				x+float64(def.Offset.X)+ox-cam.X,
 				y+th-h+float64(def.Offset.Y)+oy-cam.Y,
@@ -219,7 +225,7 @@ func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer,
 	r.order = drawOrder(l, r.order)
 	for _, item := range r.order {
 		o := &l.Objects[item.index]
-		id, img := r.frame(o.Tile.Tile, r.clock)
+		id, img := r.frame(o.Tile.TileID, r.clock)
 		if img == nil {
 			continue
 		}
@@ -239,7 +245,7 @@ func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer,
 // DrawTile draws cell's tile at animation time t, with its top-left corner at the origin of op.GeoM.
 // Flips and the tile offset are applied before op; op may be nil.
 func (r *MapRenderer) DrawTile(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions) {
-	id, img := r.frame(cell.Tile, t)
+	id, img := r.frame(cell.TileID, t)
 	if img == nil {
 		return
 	}

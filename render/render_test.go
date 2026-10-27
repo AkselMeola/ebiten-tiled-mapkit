@@ -17,7 +17,7 @@ import (
 
 func TestDrawOrder(t *testing.T) {
 	tileAt := func(y float64) tilemap.MapObject {
-		return tilemap.MapObject{Pos: tilemap.Vector{Y: y}, Size: tilemap.Vector{X: 16, Y: 16}, Visible: true, Tile: tilemap.Cell{Tile: 1}}
+		return tilemap.MapObject{Pos: tilemap.Vector{Y: y}, Size: tilemap.Vector{X: 16, Y: 16}, Visible: true, Tile: tilemap.Cell{TileID: 1}}
 	}
 	hidden := tileAt(0)
 	hidden.Visible = false
@@ -45,14 +45,14 @@ func TestOrthogonal(t *testing.T) {
 	m := &tilemap.Map{Width: 10, Height: 5, TileWidth: 16, TileHeight: 8}
 	p := NewOrthogonal(m)
 
-	if x, y := p.TileToScreen(3, 2); x != 48 || y != 16 {
+	if x, y := p.TileToScreen(tilemap.TilePos{Col: 3, Row: 2}); x != 48 || y != 16 {
 		t.Errorf("TileToScreen = %v,%v", x, y)
 	}
-	if c, r := p.ScreenToTile(47.9, 16); c != 2 || r != 2 {
-		t.Errorf("ScreenToTile = %d,%d", c, r)
+	if got := p.ScreenToTile(47.9, 16); got != (tilemap.TilePos{Col: 2, Row: 2}) {
+		t.Errorf("ScreenToTile = %v", got)
 	}
-	if c, r := p.ScreenToTile(-0.5, -9); c != -1 || r != -2 {
-		t.Errorf("ScreenToTile negative = %d,%d", c, r)
+	if got := p.ScreenToTile(-0.5, -9); got != (tilemap.TilePos{Col: -1, Row: -2}) {
+		t.Errorf("ScreenToTile negative = %v", got)
 	}
 	if b := p.Bounds(m); b != image.Rect(0, 0, 160, 40) {
 		t.Errorf("Bounds = %v", b)
@@ -126,6 +126,14 @@ func TestOverdraw(t *testing.T) {
 }
 
 func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
+
+func TestTileAtScreen(t *testing.T) {
+	m := &tilemap.Map{Width: 10, Height: 5, TileWidth: 16, TileHeight: 16}
+	r := &MapRenderer{m: m, proj: NewOrthogonal(m)}
+	if got := r.TileAtScreen(20, 5, Camera{X: 15.6, Y: 0}); got != (tilemap.TilePos{Col: 2, Row: 0}) {
+		t.Errorf("TileAtScreen = %v", got)
+	}
+}
 
 func TestNewMapRenderer(t *testing.T) {
 	var buf bytes.Buffer

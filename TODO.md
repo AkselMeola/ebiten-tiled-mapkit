@@ -5,7 +5,7 @@
 - [x] Rename `tilemap.Point` to `tilemap.Vector` (`struct{ X, Y float64 }`) with `Add`, `Sub` and
       `Scale`. Breaking change.
 - [x] `MapObject`: `X, Y, W, H` → `Pos, Size Vector`; same for `Shape`; polygon points become
-      `[]Vector`. Tile coordinates stay `col, row int`, pixel rectangles stay `image.Rectangle`.
+      `[]Vector`. Tile coordinates are `TilePos`, pixel rectangles stay `image.Rectangle`.
 - [x] New helpers (`Foot()`, `Center()`) return `Vector`. Keep the field layout identical so games
       can convert to their own vector type (`grid.Vector(o.Pos)`).
 - [x] Update README, `docs/DESIGN.md`, the coins example and the kastimees sandbox.

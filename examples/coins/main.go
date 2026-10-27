@@ -107,7 +107,7 @@ func (g *Game) spawnFromObjects() {
 		switch object.Type {
 		case "Player":
 			// The player becomes a game entity. Hide the map object so it isn't drawn twice.
-			g.player = Player{position: object.Pos, target: object.Pos, tile: object.Tile.Tile}
+			g.player = Player{position: object.Pos, target: object.Pos, tile: object.Tile.TileID}
 			object.Visible = false
 		case "Coin":
 			// Coins stay on the map; the renderer keeps drawing and animating them.
@@ -176,9 +176,8 @@ func moveToward(current, target float64) float64 {
 // isBlocked reports whether the tile at the pixel position can't be entered. Walls are marked
 // in Tiled by giving their tiles the class "Wall"; outside the map there is no tile at all.
 func (g *Game) isBlocked(position tilemap.Vector) bool {
-	column := int(position.X) / g.tileMap.TileWidth
-	row := int(position.Y) / g.tileMap.TileHeight
-	tileDef := g.tileMap.Tile(g.groundLayer.At(column, row).Tile)
+	tilePos := g.renderer.Projection().ScreenToTile(position.X, position.Y)
+	tileDef := g.tileMap.TileDef(g.groundLayer.At(tilePos).TileID)
 	return tileDef == nil || tileDef.Class == "Wall"
 }
 
@@ -223,7 +222,7 @@ func (g *Game) drawPlayer(screen *ebiten.Image, layer tilemap.Layer, camera rend
 	options := &ebiten.DrawImageOptions{}
 	options.GeoM.Translate(player.position.X-camera.X, player.position.Y-camera.Y)
 	// DrawTile draws a map tile for the game's own entity, with flips and animation applied.
-	g.renderer.DrawTile(screen, tilemap.Cell{Tile: player.tile, Flip: player.flip}, animationTime, options)
+	g.renderer.DrawTile(screen, tilemap.Cell{TileID: player.tile, Flip: player.flip}, animationTime, options)
 }
 
 // Layout makes the game's screen exactly the map's size; Ebiten scales it up to the window.
