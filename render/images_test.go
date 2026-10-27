@@ -17,7 +17,7 @@ func TestImages(t *testing.T) {
 	fsys := fstest.MapFS{"ui/button.png": {Data: buf.Bytes()}}
 
 	images := NewImages(NewFSTextures(fsys)).Add("button", "ui/button.png")
-	if err := images.Load(); err != nil {
+	if err := images.Preload(); err != nil {
 		t.Fatal(err)
 	}
 	if got := images.Get("button").Bounds().Dx(); got != 3 {
@@ -29,14 +29,14 @@ func TestImages(t *testing.T) {
 		t.Errorf("corner bounds = %v", got)
 	}
 	images.AddRegion("outside", "ui/button.png", image.Rect(2, 0, 4, 2))
-	if err := images.Load(); err == nil || !strings.Contains(err.Error(), "outside") {
-		t.Errorf("Load error = %v, want one for the region outside the image", err)
+	if err := images.Preload(); err == nil || !strings.Contains(err.Error(), "outside") {
+		t.Errorf("Preload error = %v, want one for the region outside the image", err)
 	}
 	delete(images.entries, "outside")
 
 	images.Add("missing", "ui/missing.png")
-	if err := images.Load(); err == nil || !strings.Contains(err.Error(), "ui/missing.png") {
-		t.Errorf("Load error = %v, want one naming ui/missing.png", err)
+	if err := images.Preload(); err == nil || !strings.Contains(err.Error(), "ui/missing.png") {
+		t.Errorf("Preload error = %v, want one naming ui/missing.png", err)
 	}
 	mustPanic(t, func() { images.Get("missing") })
 	mustPanic(t, func() { images.Get("unknown") })

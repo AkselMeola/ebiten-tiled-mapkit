@@ -40,8 +40,8 @@ func (i *Images) AddRegion(name, path string, region image.Rectangle) *Images {
 	return i
 }
 
-// Load loads every added image and returns all errors.
-func (i *Images) Load() error {
+// Preload loads every added image up front and returns all errors.
+func (i *Images) Preload() error {
 	var errs []error
 	for _, name := range slices.Sorted(maps.Keys(i.entries)) {
 		if _, err := i.load(name); err != nil {
@@ -52,7 +52,7 @@ func (i *Images) Load() error {
 }
 
 // Get returns the image added under name, loading it on first use. It panics on an unknown name
-// or a failed load; call Load first to handle errors.
+// or a failed load; call Preload first to handle errors.
 func (i *Images) Get(name string) *ebiten.Image {
 	img, err := i.load(name)
 	if err != nil {

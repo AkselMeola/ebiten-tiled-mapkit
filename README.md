@@ -209,14 +209,14 @@ ui := render.NewImages(textures).
 	Add("button", "images/ui/button.png").
 	Add("heart", "images/ui/heart.png").
 	AddRegion("checkbox", "images/ui/sheet.png", image.Rect(0, 0, 16, 16)) // part of a sheet
-if err := ui.Load(); err != nil { // optional: fail early on missing images
+if err := ui.Preload(); err != nil { // optional: fail early on missing images
 	log.Fatal(err)
 }
 
 screen.DrawImage(ui.Get("heart"), op)
 ```
 
-`Get` loads on first use and panics on an unknown name or a failed load, so call `Load` at
+`Get` loads on first use and panics on an unknown name or a failed load, so call `Preload` at
 startup to handle errors there.
 
 ## Camera and zoom
