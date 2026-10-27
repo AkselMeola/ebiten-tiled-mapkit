@@ -87,7 +87,7 @@ library.
 type MapObject struct {
     ID         int
     Name, Type string
-    X, Y, W, H float64 // X, Y = top-left corner
+    Pos, Size  Vector  // Pos = top-left corner
     Rotation   float64 // degrees, clockwise, around the top-left corner
     Visible    bool
     Opacity    float64
@@ -99,9 +99,14 @@ type MapObject struct {
 
 **Anchor normalization.** Tiled anchors tile objects at the bottom-left (or per the tileset's
 `objectalignment`, or bottom-center on isometric maps). The domain has one rule for every object:
-`X, Y` is the top-left corner and rotation turns around it. The Tiled adapter converts, including for
+`Pos` is the top-left corner and rotation turns around it. The Tiled adapter converts, including for
 rotated objects; the conversion is lossless. `Bounds()` returns the rotated AABB and `SortY()` its
-bottom edge for depth sorting.
+bottom edge for depth sorting. `Center()` and `Foot()` (bottom center) also follow rotation.
+
+**Vectors.** Pixel positions and sizes are `Vector{X, Y float64}` with `Add`, `Sub`, `Scale` and
+`Rotate`. It stays a plain two-field struct so it compares with `==` and converts directly to a
+game's own vector type with the same fields. Tile coordinates stay `col, row int` and pixel
+rectangles stay `image.Rectangle`.
 
 ### Properties
 
@@ -205,10 +210,14 @@ func (r *MapRenderer) Err() error
 ```
 
 Draw walks `Map.Layers` in order with a type switch, skipping invisible layers and accumulating
-group offsets and opacity. For a tile layer it culls to the visible range and draws each cell:
-resolve animation, take the cached sub-image, apply flips, anchor bottom-left in the cell (tiles
-larger than the grid stick out upward, as in Tiled), translate by tile offset, layer offset and
-camera. Object layers draw only tile objects; other objects have no visuals.
+group offsets and opacity. The camera is rounded to whole pixels first, and `AfterLayer` gets
+the rounded camera so entities stay aligned with the map. For a tile layer it culls to the visible
+range and adds one quad per cell to a vertex batch: resolve animation, anchor bottom-left in the
+cell (tiles larger than the grid stick out upward, as in Tiled), add tile offset, layer offset and
+camera, and flip the corners as `DrawTile` does. Object layers draw only tile objects; other
+objects have no visuals. An object layer's `DrawOrder` is `DrawOrderTopDown` (sorted by `SortY()`,
+stable; the zero value and Tiled's default) or `DrawOrderIndex` (file order). Sorting happens every
+frame so objects the game moves stay correct; the index buffer is reused.
 
 `DrawTile` exposes the same tile drawing for game entities: flips and tile offset first, then the
 caller's `op` (position, rotation, scale, color). Entities are drawn from the `AfterLayer` hook so
@@ -222,10 +231,17 @@ Implementation notes:
   touch pixels, so they run headless in tests.
 - **Culling margins.** Tiles can extend outside their cell (larger than the grid, or offset). The
   renderer computes how far once per map and widens the view before calling `VisibleTiles`.
-- **Flips.** Applied with `GeoM`: diagonal first (rotate 90° + mirror), then horizontal, then
-  vertical, each within the tile's bounds.
-- **Batching.** Ebiten batches consecutive draws from the same atlas. `DrawTriangles` or
-  pre-rendered static layers only if profiling asks for it.
+- **Tile layer batching.** One `DrawTriangles32` call per run of tiles sharing a tileset image,
+  so a single-tileset layer is one call; a texture change flushes the batch, keeping draw order.
+  The vertex and index slices are reused between frames. `BenchmarkDrawFullHD` (25k tiles):
+  ~8.2 ms with one `DrawImage` per tile, ~2.4 ms batched.
+- **Whole pixels.** `DrawImage` snaps vertices to a third of a pixel; `DrawTriangles32` doesn't,
+  so at fractional positions the edge pixels sample outside the tile and neighboring tiles in the
+  tileset bleed in. Quads are placed on whole pixels.
+- **Flips.** One implementation, `applyFlips` on a `GeoM`: diagonal first (transpose), then
+  horizontal, then vertical, within the tile's bounds. Batched quads apply it to their corners.
+- **Not batched.** Tile objects (few, rotated, scaled, sorted), image layers and `DrawTile` use
+  `DrawImage`. Pre-rendering static layers only if profiling asks for it.
 
 ## Load and run lifecycle
 

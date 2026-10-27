@@ -2,12 +2,12 @@ package tilemap
 
 import "math"
 
-// MapObject is a spawn descriptor. X, Y is the top-left corner; Rotation is in degrees, clockwise,
+// MapObject is a spawn descriptor. Pos is the top-left corner; Rotation is in degrees, clockwise,
 // around that corner.
 type MapObject struct {
 	ID         int
 	Name, Type string
-	X, Y, W, H float64
+	Pos, Size  Vector
 	Rotation   float64
 	Visible    bool
 	Opacity    float64
@@ -18,29 +18,35 @@ type MapObject struct {
 
 func (o *MapObject) IsTile() bool { return !o.Tile.Empty() }
 
+// ToWorld returns the point at offset local from the top-left corner, rotated with the object.
+func (o *MapObject) ToWorld(local Vector) Vector { return o.Pos.Add(local.Rotate(o.Rotation)) }
+
+func (o *MapObject) Center() Vector { return o.ToWorld(o.Size.Scale(0.5)) }
+
+// Foot is the bottom-center point, where a character stands.
+func (o *MapObject) Foot() Vector { return o.ToWorld(Vector{o.Size.X / 2, o.Size.Y}) }
+
 // Bounds is the axis-aligned box around the rotated object.
-func (o *MapObject) Bounds() (minX, minY, maxX, maxY float64) {
+func (o *MapObject) Bounds() (minimum, maximum Vector) {
 	pts := o.Shape.Points
 	if len(pts) == 0 || (o.Shape.Kind != ShapePolygon && o.Shape.Kind != ShapePolyline) {
-		pts = []Point{{0, 0}, {o.W, 0}, {0, o.H}, {o.W, o.H}}
+		pts = []Vector{{0, 0}, {o.Size.X, 0}, {0, o.Size.Y}, o.Size}
 	}
 
-	sin, cos := math.Sincos(o.Rotation * math.Pi / 180)
-	minX, minY = math.Inf(1), math.Inf(1)
-	maxX, maxY = math.Inf(-1), math.Inf(-1)
+	minimum = Vector{math.Inf(1), math.Inf(1)}
+	maximum = Vector{math.Inf(-1), math.Inf(-1)}
 	for _, p := range pts {
-		x := o.X + p.X*cos - p.Y*sin
-		y := o.Y + p.X*sin + p.Y*cos
-		minX, maxX = min(minX, x), max(maxX, x)
-		minY, maxY = min(minY, y), max(maxY, y)
+		q := o.ToWorld(p)
+		minimum = Vector{min(minimum.X, q.X), min(minimum.Y, q.Y)}
+		maximum = Vector{max(maximum.X, q.X), max(maximum.Y, q.Y)}
 	}
-	return minX, minY, maxX, maxY
+	return minimum, maximum
 }
 
 // SortY is the bottom edge, for depth sorting.
 func (o *MapObject) SortY() float64 {
-	_, _, _, maxY := o.Bounds()
-	return maxY
+	_, maximum := o.Bounds()
+	return maximum.Y
 }
 
 type ShapeKind uint8
@@ -53,13 +59,10 @@ const (
 	ShapePoint
 )
 
-type Point struct{ X, Y float64 }
-
-// Shape is relative to its owner; Points are relative to X, Y.
+// Shape is relative to its owner; Points are relative to Pos.
 type Shape struct {
-	Kind     ShapeKind
-	X, Y     float64
-	W, H     float64
-	Rotation float64
-	Points   []Point
+	Kind      ShapeKind
+	Pos, Size Vector
+	Rotation  float64
+	Points    []Vector
 }

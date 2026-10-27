@@ -128,7 +128,7 @@ func colliders(groups []*gotiled.ObjectGroup) []tilemap.Shape {
 	for _, g := range groups {
 		for _, o := range g.Objects {
 			s := shape(o)
-			s.X, s.Y, s.Rotation = o.X, o.Y, o.Rotation
+			s.Pos, s.Rotation = tilemap.Vector{X: o.X, Y: o.Y}, o.Rotation
 			shapes = append(shapes, s)
 		}
 	}

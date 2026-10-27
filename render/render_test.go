@@ -3,12 +3,39 @@ package render
 import (
 	"image"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
 	"github.com/AkselMeola/ebiten-tiled-mapkit/tilemap"
 )
+
+func TestDrawOrder(t *testing.T) {
+	tileAt := func(y float64) tilemap.MapObject {
+		return tilemap.MapObject{Pos: tilemap.Vector{Y: y}, Size: tilemap.Vector{X: 16, Y: 16}, Visible: true, Tile: tilemap.Cell{Tile: 1}}
+	}
+	hidden := tileAt(0)
+	hidden.Visible = false
+	plain := tilemap.MapObject{Visible: true}
+	l := &tilemap.ObjectLayer{Objects: []tilemap.MapObject{tileAt(50), hidden, tileAt(10), plain, tileAt(50), tileAt(30)}}
+
+	indexes := func(items []drawItem) []int {
+		out := make([]int, len(items))
+		for i, item := range items {
+			out[i] = item.index
+		}
+		return out
+	}
+
+	if got := indexes(drawOrder(l, nil)); !slices.Equal(got, []int{2, 5, 0, 4}) {
+		t.Errorf("topdown order = %v", got)
+	}
+	l.DrawOrder = tilemap.DrawOrderIndex
+	if got := indexes(drawOrder(l, nil)); !slices.Equal(got, []int{0, 2, 4, 5}) {
+		t.Errorf("index order = %v", got)
+	}
+}
 
 func TestOrthogonal(t *testing.T) {
 	m := &tilemap.Map{Width: 10, Height: 5, TileWidth: 16, TileHeight: 8}

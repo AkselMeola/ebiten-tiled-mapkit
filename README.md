@@ -129,20 +129,26 @@ for i := range objects.Objects {
 	o := &objects.Objects[i]
 	switch o.Type {
 	case "Player":
-		player = newPlayer(o.X, o.Y)
+		player = newPlayer(o.Pos)
 		o.Visible = false // the game draws the player from now on
 	case "Enemy":
-		spawnEnemy(o.X, o.Y, o.Props.Int("hp"))
+		spawnEnemy(o.Pos, o.Props.Int("hp"))
 	}
 }
 ```
 
-`X, Y` is always the object's **top-left corner**, and `Rotation` turns around it. Tiled's own
-anchor for tile objects (bottom-left by default) is converted on load. `Bounds()` gives the rotated
-bounding box and `SortY()` its bottom edge for depth sorting.
+`Pos` is always the object's **top-left corner**, and `Rotation` turns around it. Tiled's own
+anchor for tile objects (bottom-left by default) is converted on load. `Size` is the width and
+height. `Center()` and `Foot()` (bottom center, where a character stands) take rotation into
+account, `Bounds()` gives the rotated bounding box and `SortY()` its bottom edge for depth sorting.
+
+Positions and sizes are `tilemap.Vector` (`struct{ X, Y float64 }`) with `Add`, `Sub`, `Scale` and
+`Rotate`. Vectors compare with `==`, and a game's own vector type with the same fields converts
+directly: `myVector(o.Pos)`.
 
 Tile objects are drawn by the renderer. Hide one with `Visible = false`, for example when a
-coin is collected.
+coin is collected. They are drawn in the layer's *Drawing Order* from Tiled: *Top Down* (the
+default) sorts by `SortY()`, so lower objects overlap higher ones; *Manual* keeps the file order.
 
 ### Properties
 
@@ -172,7 +178,7 @@ r.AfterLayer = func(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
 	}
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Rotate(player.angle)
-	op.GeoM.Translate(player.x-cam.X, player.y-cam.Y)
+	op.GeoM.Translate(player.pos.X-cam.X, player.pos.Y-cam.Y)
 	r.DrawTile(dst, m, tilemap.Cell{Tile: player.tile, Flip: player.flip}, anim.Clock-player.animStart, op)
 }
 ```
@@ -192,8 +198,10 @@ To switch animation by state or direction, give each animated tile properties in
 
 ## Camera and zoom
 
-`Camera{X, Y}` is the world position of the screen's top-left corner. For zoom, return a smaller
-logical size from `Layout` and let Ebiten scale, or draw to an offscreen image and scale that.
+`Camera{X, Y}` is the world position of the screen's top-left corner. The renderer rounds it to
+whole pixels, and passes the rounded camera to `AfterLayer`, so draw entities relative to that one.
+For zoom, return a smaller logical size from `Layout` and let Ebiten scale, or draw to an offscreen
+image and scale that.
 
 ## Packages
 

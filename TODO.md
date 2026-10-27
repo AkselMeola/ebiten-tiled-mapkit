@@ -2,19 +2,19 @@
 
 ## v0.2.0: depth and objects
 
-- [ ] Rename `tilemap.Point` to `tilemap.Vector` (`struct{ X, Y float64 }`) with `Add`, `Sub` and
+- [x] Rename `tilemap.Point` to `tilemap.Vector` (`struct{ X, Y float64 }`) with `Add`, `Sub` and
       `Scale`. Breaking change.
-- [ ] `MapObject`: `X, Y, W, H` → `Pos, Size Vector`; same for `Shape`; polygon points become
+- [x] `MapObject`: `X, Y, W, H` → `Pos, Size Vector`; same for `Shape`; polygon points become
       `[]Vector`. Tile coordinates stay `col, row int`, pixel rectangles stay `image.Rectangle`.
-- [ ] New helpers (`Foot()`, `Center()`) return `Vector`. Keep the field layout identical so games
+- [x] New helpers (`Foot()`, `Center()`) return `Vector`. Keep the field layout identical so games
       can convert to their own vector type (`grid.Vector(o.Pos)`).
-- [ ] Update README, `docs/DESIGN.md`, the coins example and the kastimees sandbox.
+- [x] Update README, `docs/DESIGN.md`, the coins example and the kastimees sandbox.
 
-- [ ] Object layer draw order: read Tiled's `draworder` into `ObjectLayer`. With `topdown` (Tiled's
+- [x] Object layer draw order: read Tiled's `draworder` into `ObjectLayer`. With `topdown` (Tiled's
       default) the renderer sorts by `SortY()`; with `index` it keeps file order.
 - [ ] `MapRenderer.DrawObject(dst, m, obj, cam)`: draws one map object exactly as the renderer does
       (size, rotation, opacity, camera), so games can y-sort map objects together with entities.
-- [ ] `MapObject.Foot()`: bottom-center point, rotation applied, for spawning characters where
+- [x] `MapObject.Foot()`: bottom-center point, rotation applied, for spawning characters where
       they stand.
 - [ ] Coins example: a tree as a tile object that the player can walk behind (y-sorted in
       `AfterLayer` of a hidden object layer), trunk blocking.
@@ -34,10 +34,26 @@
 - [ ] Link it from README; keep its code compiling (e.g. per-step examples under
       `examples/tutorial/`).
 
+## Isometric
+
+- [ ] `Isometric` projection: `TileToScreen` `((c−r)·w/2, (c+r)·h/2)`, `ScreenToTile`, `Bounds`.
+- [ ] Culling: the view is a diamond in tile space. Let the projection drive tile iteration instead
+      of the renderer looping over a `c0..c1 × r0..r1` rectangle.
+- [ ] Tile image anchor from the projection (Tiled centers images horizontally in isometric maps).
+- [ ] `Projection.WorldToScreen(Vector)`: isometric object positions are in tile-axis space, not
+      screen pixels. Use it in `drawObjectLayer`, `DrawObject` and for y-sorting (depth is the
+      foot's screen y, not `SortY()`).
+- [ ] Tiled adapter: tile object anchor is bottom-center in isometric maps.
+- [ ] Staggered and hexagonal: own projections, later.
+
 ## Performance
 
-- [ ] Reuse one `DrawImageOptions` per layer instead of allocating per tile and per object
-      (`drawTileLayer`, `drawObjectLayer`).
-- [ ] Benchmark: full-HD view, 16 px tiles, three layers. Record before/after numbers.
-- [ ] Only if the benchmark asks for it: one `DrawTriangles` call per layer and texture.
+- [x] Benchmark: full-HD view, 16 px tiles, three layers (`BenchmarkDrawFullHD`). Baseline on an
+      i7-1260P: ~8 ms per `Draw` for ~25k tiles (~320 ns per tile), half a 60 FPS frame. Profile:
+      ~98% of that is inside `ebiten.(*Image).DrawImage`, our own code ~2%.
+- [x] ~~Reuse one `DrawImageOptions` per layer~~: measured, no gain. The options never escape to
+      the heap (`go build -gcflags=-m`), so there was nothing to save. Not done.
+- [x] One `DrawTriangles32` call per run of tiles sharing a texture instead of one `DrawImage` per
+      tile: ~8.2 ms → ~2.4 ms in the benchmark, measured back to back. Pixel-identical for whole-
+      pixel cameras; the camera is now rounded to whole pixels to avoid bleeding.
 - [ ] Only if profiling asks for it: pre-render static (non-animated) layers into chunk images.

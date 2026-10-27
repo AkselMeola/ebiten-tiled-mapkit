@@ -31,8 +31,16 @@ func (l *TileLayer) At(col, row int) Cell {
 
 type ObjectLayer struct {
 	LayerBase
-	Objects []MapObject
+	DrawOrder DrawOrder
+	Objects   []MapObject
 }
+
+type DrawOrder uint8
+
+const (
+	DrawOrderTopDown DrawOrder = iota // by SortY, file order on ties
+	DrawOrderIndex                    // file order
+)
 
 type ImageLayer struct {
 	LayerBase

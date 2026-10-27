@@ -9,7 +9,6 @@ import (
 	"embed"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
@@ -19,173 +18,205 @@ import (
 	"github.com/AkselMeola/ebiten-tiled-mapkit/tilemap"
 )
 
+// The map, its tileset and the tileset image are embedded, so the game is a single binary.
+// tiled.Load resolves the tileset and image paths relative to the map inside this filesystem.
+//
 //go:embed assets/coins.tmx assets/tiles.tsx assets/tiles.png
 var assets embed.FS
 
 const (
-	scale    = 2
-	stepTime = 150 * time.Millisecond
+	// windowScale enlarges the small pixel-art map in the window.
+	windowScale = 2
+	// walkSpeed is in pixels per tick (Ebiten runs 60 ticks per second). It divides the tile
+	// size evenly, so the player always stops exactly on a tile.
+	walkSpeed = 4
 )
 
-type player struct {
-	col, row     int
-	fromX, fromY float64
-	x, y         float64
-	stepStart    time.Duration
-	moving       bool
-	tile         tilemap.TileID
-	flip         tilemap.Flip
-	walkStart    time.Duration
+// Player is the game's own entity. The map only says where it starts; from then on the game
+// owns its position, direction and drawing.
+type Player struct {
+	position tilemap.Vector // current position in pixels, top-left corner
+	target   tilemap.Vector // the tile the player is walking to
+	tile     tilemap.TileID
+	flip     tilemap.Flip // mirrored when facing left
 }
 
-type game struct {
-	m        *tilemap.Map
-	ground   *tilemap.TileLayer
-	objects  *tilemap.ObjectLayer
-	renderer *render.MapRenderer
-	anim     *render.Animator
+// isWalking reports whether the player is between two tiles.
+func (p *Player) isWalking() bool {
+	return p.position != p.target
+}
 
-	player    player
-	coins     []*tilemap.MapObject
-	collected int
+type Game struct {
+	tileMap     *tilemap.Map
+	groundLayer *tilemap.TileLayer
+	objectLayer *tilemap.ObjectLayer
+	renderer    *render.MapRenderer
+	animator    *render.Animator
+
+	player         Player
+	coinCount      int
+	collectedCount int
 }
 
 func main() {
-	m, err := tiled.Load(assets, "assets/coins.tmx")
+	tileMap, err := tiled.Load(assets, "assets/coins.tmx")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	g := &game{
-		m:       m,
-		ground:  m.Layer("ground").(*tilemap.TileLayer),
-		objects: m.Layer("objects").(*tilemap.ObjectLayer),
-		anim:    &render.Animator{},
+	game := &Game{
+		tileMap:     tileMap,
+		groundLayer: tileMap.Layer("ground").(*tilemap.TileLayer),
+		objectLayer: tileMap.Layer("objects").(*tilemap.ObjectLayer),
+		animator:    &render.Animator{},
 	}
-	g.renderer = render.NewMapRenderer(render.NewOrthogonal(m), render.NewFSTextures(assets), g.anim)
-	g.renderer.AfterLayer = g.afterLayer
-	if err := g.renderer.Preload(m); err != nil {
+
+	// The renderer draws the map. The animator's clock drives the animated tiles (water, coins).
+	game.renderer = render.NewMapRenderer(render.NewOrthogonal(tileMap), render.NewFSTextures(assets), game.animator)
+	// AfterLayer runs after each map layer is drawn; we use it to draw the player between layers.
+	game.renderer.AfterLayer = game.drawPlayer
+	// Preload loads every tileset image now, so a missing file fails at startup, not mid-game.
+	if err := game.renderer.Preload(tileMap); err != nil {
 		log.Fatal(err)
 	}
-	g.spawn()
+
+	game.spawnFromObjects()
 
 	ebiten.SetWindowTitle("mapkit example: coins")
-	ebiten.SetWindowSize(m.Width*m.TileWidth*scale, m.Height*m.TileHeight*scale)
-	if err := ebiten.RunGame(g); err != nil {
+	ebiten.SetWindowSize(tileMap.Width*tileMap.TileWidth*windowScale, tileMap.Height*tileMap.TileHeight*windowScale)
+	if err := ebiten.RunGame(game); err != nil {
 		log.Fatal(err)
 	}
 }
 
-// spawn turns map objects into game state. The player becomes an entity drawn by the game;
-// coins stay on the map and are hidden when collected.
-func (g *game) spawn() {
-	for i := range g.objects.Objects {
-		o := &g.objects.Objects[i]
-		switch o.Type {
+// spawnFromObjects reads the objects placed in Tiled. Objects are only descriptions: the game
+// decides what each one becomes.
+func (g *Game) spawnFromObjects() {
+	for i := range g.objectLayer.Objects {
+		object := &g.objectLayer.Objects[i]
+		switch object.Type {
 		case "Player":
-			col, row := g.cellOf(o)
-			g.player = player{col: col, row: row, x: o.X, y: o.Y, tile: o.Tile.Tile}
-			o.Visible = false
+			// The player becomes a game entity. Hide the map object so it isn't drawn twice.
+			g.player = Player{position: object.Pos, target: object.Pos, tile: object.Tile.Tile}
+			object.Visible = false
 		case "Coin":
-			g.coins = append(g.coins, o)
+			// Coins stay on the map; the renderer keeps drawing and animating them.
+			g.coinCount++
 		}
 	}
 }
 
-func (g *game) cellOf(o *tilemap.MapObject) (col, row int) {
-	return int(o.X) / g.m.TileWidth, int(o.Y) / g.m.TileHeight
-}
+func (g *Game) Update() error {
+	// Advance the shared clock by one tick. All map animations are computed from it.
+	g.animator.Update(render.Tick())
 
-func (g *game) blocked(col, row int) bool {
-	def := g.m.Tile(g.ground.At(col, row).Tile)
-	return def == nil || def.Class == "Wall"
-}
+	player := &g.player
 
-func (g *game) Update() error {
-	g.anim.Update(render.Tick())
-	now := g.anim.Clock
-	p := &g.player
-
-	if p.moving {
-		t := min(float64(now-p.stepStart)/float64(stepTime), 1)
-		toX, toY := float64(p.col*g.m.TileWidth), float64(p.row*g.m.TileHeight)
-		p.x, p.y = p.fromX+(toX-p.fromX)*t, p.fromY+(toY-p.fromY)*t
-		if t == 1 {
-			p.moving = false
-			g.collect()
-		}
+	// Slide toward the target a few pixels per tick.
+	player.position = tilemap.Vector{
+		X: moveToward(player.position.X, player.target.X),
+		Y: moveToward(player.position.Y, player.target.Y),
 	}
 
-	if !p.moving {
-		dc, dr := input()
-		if dc < 0 {
-			p.flip = tilemap.FlipH
-		} else if dc > 0 {
-			p.flip = 0
+	// Input is only read once on a tile, so the player moves tile by tile. Reading it right after
+	// arriving keeps a held key walking without a standing frame in between.
+	if !player.isWalking() {
+		g.collectCoins()
+
+		direction := readInput()
+		if direction.X < 0 {
+			player.flip = tilemap.FlipH
+		} else if direction.X > 0 {
+			player.flip = 0
 		}
-		if (dc != 0 || dr != 0) && !g.blocked(p.col+dc, p.row+dr) {
-			if now-p.stepStart > stepTime+render.Tick() {
-				p.walkStart = now
-			}
-			p.col, p.row = p.col+dc, p.row+dr
-			p.fromX, p.fromY = p.x, p.y
-			p.stepStart, p.moving = now, true
+
+		// One tile further in the pressed direction.
+		step := tilemap.Vector{X: direction.X * float64(g.tileMap.TileWidth), Y: direction.Y * float64(g.tileMap.TileHeight)}
+		next := player.position.Add(step)
+		if !g.isBlocked(next) {
+			player.target = next
 		}
 	}
 	return nil
 }
 
-func input() (dc, dr int) {
+// readInput returns the pressed direction as -1, 0 or 1 per axis. Only one direction at a time.
+func readInput() tilemap.Vector {
 	switch {
 	case ebiten.IsKeyPressed(ebiten.KeyArrowLeft) || ebiten.IsKeyPressed(ebiten.KeyA):
-		return -1, 0
+		return tilemap.Vector{X: -1}
 	case ebiten.IsKeyPressed(ebiten.KeyArrowRight) || ebiten.IsKeyPressed(ebiten.KeyD):
-		return 1, 0
+		return tilemap.Vector{X: 1}
 	case ebiten.IsKeyPressed(ebiten.KeyArrowUp) || ebiten.IsKeyPressed(ebiten.KeyW):
-		return 0, -1
+		return tilemap.Vector{Y: -1}
 	case ebiten.IsKeyPressed(ebiten.KeyArrowDown) || ebiten.IsKeyPressed(ebiten.KeyS):
-		return 0, 1
+		return tilemap.Vector{Y: 1}
 	}
-	return 0, 0
+	return tilemap.Vector{}
 }
 
-func (g *game) collect() {
-	for _, c := range g.coins {
-		if col, row := g.cellOf(c); c.Visible && col == g.player.col && row == g.player.row {
-			c.Visible = false
-			g.collected++
+// moveToward steps from current toward target by walkSpeed, without overshooting.
+func moveToward(current, target float64) float64 {
+	if current < target {
+		return min(current+walkSpeed, target)
+	}
+	return max(current-walkSpeed, target)
+}
+
+// isBlocked reports whether the tile at the pixel position can't be entered. Walls are marked
+// in Tiled by giving their tiles the class "Wall"; outside the map there is no tile at all.
+func (g *Game) isBlocked(position tilemap.Vector) bool {
+	column := int(position.X) / g.tileMap.TileWidth
+	row := int(position.Y) / g.tileMap.TileHeight
+	tileDef := g.tileMap.Tile(g.groundLayer.At(column, row).Tile)
+	return tileDef == nil || tileDef.Class == "Wall"
+}
+
+// collectCoins picks up a coin the player is standing on. Coins and the player both sit
+// exactly on tiles, so comparing positions is enough. A collected coin is just hidden.
+func (g *Game) collectCoins() {
+	for i := range g.objectLayer.Objects {
+		object := &g.objectLayer.Objects[i]
+		if object.Type == "Coin" && object.Visible && object.Pos == g.player.position {
+			object.Visible = false
+			g.collectedCount++
 		}
 	}
 }
 
-func (g *game) Draw(screen *ebiten.Image) {
-	g.renderer.Draw(screen, g.m, render.Camera{})
+func (g *Game) Draw(screen *ebiten.Image) {
+	// Draws every layer in order; the player is drawn in between by drawPlayer.
+	// The camera stays at the origin because the whole map fits in the window.
+	g.renderer.Draw(screen, g.tileMap, render.Camera{})
 
-	msg := fmt.Sprintf("coins %d/%d", g.collected, len(g.coins))
-	if g.collected == len(g.coins) {
-		msg += "  - all collected!"
+	status := fmt.Sprintf("coins %d/%d", g.collectedCount, g.coinCount)
+	if g.collectedCount == g.coinCount {
+		status += "  - all collected!"
 	}
-	ebitenutil.DebugPrint(screen, msg)
+	ebitenutil.DebugPrint(screen, status)
 }
 
-// afterLayer draws the player on top of the object layer.
-func (g *game) afterLayer(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
-	if l != g.objects {
+// drawPlayer is the renderer's AfterLayer hook. Drawing right after the object layer puts the
+// player above the ground and next to the coins.
+func (g *Game) drawPlayer(screen *ebiten.Image, layer tilemap.Layer, camera render.Camera) {
+	if layer != g.objectLayer {
 		return
 	}
-	p := &g.player
+	player := &g.player
 
-	// Walking plays the animation from its first frame; standing still shows frame one.
-	var t time.Duration
-	if p.moving {
-		t = g.anim.Clock - p.walkStart
+	// The time picks the animation frame: the map clock while walking, frame one when standing.
+	animationTime := g.animator.Clock
+	if !player.isWalking() {
+		animationTime = 0
 	}
 
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(p.x-cam.X, p.y-cam.Y)
-	g.renderer.DrawTile(dst, g.m, tilemap.Cell{Tile: p.tile, Flip: p.flip}, t, op)
+	options := &ebiten.DrawImageOptions{}
+	options.GeoM.Translate(player.position.X-camera.X, player.position.Y-camera.Y)
+	// DrawTile draws a map tile for the game's own entity, with flips and animation applied.
+	g.renderer.DrawTile(screen, g.tileMap, tilemap.Cell{Tile: player.tile, Flip: player.flip}, animationTime, options)
 }
 
-func (g *game) Layout(int, int) (int, int) {
-	return g.m.Width * g.m.TileWidth, g.m.Height * g.m.TileHeight
+// Layout makes the game's screen exactly the map's size; Ebiten scales it up to the window.
+func (g *Game) Layout(int, int) (int, int) {
+	return g.tileMap.Width * g.tileMap.TileWidth, g.tileMap.Height * g.tileMap.TileHeight
 }

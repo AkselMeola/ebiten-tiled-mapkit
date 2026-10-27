@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -150,7 +151,7 @@ func TestLoad(t *testing.T) {
 		if atlas.Class != "Wall" || !atlas.Props.Bool("solid") {
 			t.Errorf("tile 2 meta = %q %v", atlas.Class, atlas.Props)
 		}
-		if len(atlas.Colliders) != 1 || !reflect.DeepEqual(atlas.Colliders[0], tilemap.Shape{X: 2, Y: 3, W: 10, H: 11}) {
+		if len(atlas.Colliders) != 1 || !reflect.DeepEqual(atlas.Colliders[0], tilemap.Shape{Pos: tilemap.Vector{X: 2, Y: 3}, Size: tilemap.Vector{X: 10, Y: 11}}) {
 			t.Errorf("tile 2 colliders = %+v", atlas.Colliders)
 		}
 
@@ -218,6 +219,9 @@ func TestLoad(t *testing.T) {
 		if objs.OffsetX != 5 || objs.OffsetY != 6 {
 			t.Errorf("offset = %v,%v", objs.OffsetX, objs.OffsetY)
 		}
+		if objs.DrawOrder != tilemap.DrawOrderTopDown {
+			t.Errorf("default DrawOrder = %v, want topdown", objs.DrawOrder)
+		}
 		if len(objs.Objects) != 5 {
 			t.Fatalf("len(Objects) = %d", len(objs.Objects))
 		}
@@ -229,12 +233,12 @@ func TestLoad(t *testing.T) {
 		if crate.Opacity != 0.5 || objs.Objects[1].Opacity != 1 {
 			t.Errorf("opacity = %v, %v, want 0.5, 1", crate.Opacity, objs.Objects[1].Opacity)
 		}
-		if crate.X != 32 || crate.Y != 24 {
-			t.Errorf("crate top-left = %v,%v, want 32,24", crate.X, crate.Y)
+		if crate.Pos != (tilemap.Vector{X: 32, Y: 24}) {
+			t.Errorf("crate top-left = %v, want {32 24}", crate.Pos)
 		}
 
 		zone := objs.Objects[1]
-		if zone.Shape.Kind != tilemap.ShapePolygon || len(zone.Shape.Points) != 3 || zone.Shape.Points[1] != (tilemap.Point{X: 4}) {
+		if zone.Shape.Kind != tilemap.ShapePolygon || len(zone.Shape.Points) != 3 || zone.Shape.Points[1] != (tilemap.Vector{X: 4}) {
 			t.Errorf("zone = %+v", zone.Shape)
 		}
 		if objs.Objects[2].Shape.Kind != tilemap.ShapePoint {
@@ -245,7 +249,7 @@ func TestLoad(t *testing.T) {
 		}
 
 		tpl := objs.Objects[4]
-		if tpl.Name != "tpl-crate" || tpl.Tile.Tile != 5 || tpl.W != 16 || tpl.H != 24 || tpl.X != 64 {
+		if tpl.Name != "tpl-crate" || tpl.Tile.Tile != 5 || tpl.Size != (tilemap.Vector{X: 16, Y: 24}) || tpl.Pos.X != 64 {
 			t.Errorf("template object = %+v", tpl)
 		}
 		if tpl.Props.Int("hp") != 9 || tpl.Props.String("kind") != "wood" {
@@ -291,8 +295,8 @@ func TestTileObjectAnchor(t *testing.T) {
 				t.Fatal(err)
 			}
 			o := m.Layers[1].(*tilemap.ObjectLayer).Objects[0]
-			if !near(o.X, tc.x) || !near(o.Y, tc.y) || o.W != tc.w || o.H != tc.h {
-				t.Errorf("object = %v,%v %vx%v, want %v,%v %vx%v", o.X, o.Y, o.W, o.H, tc.x, tc.y, tc.w, tc.h)
+			if !near(o.Pos.X, tc.x) || !near(o.Pos.Y, tc.y) || o.Size != (tilemap.Vector{X: tc.w, Y: tc.h}) {
+				t.Errorf("object = %v,%v %vx%v, want %v,%v %vx%v", o.Pos.X, o.Pos.Y, o.Size.X, o.Size.Y, tc.x, tc.y, tc.w, tc.h)
 			}
 		})
 	}
@@ -303,8 +307,20 @@ func TestPlainObjectUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if o := m.Layers[1].(*tilemap.ObjectLayer).Objects[0]; o.X != 100 || o.Y != 50 {
-		t.Errorf("object = %v,%v, want 100,50", o.X, o.Y)
+	if o := m.Layers[1].(*tilemap.ObjectLayer).Objects[0]; o.Pos != (tilemap.Vector{X: 100, Y: 50}) {
+		t.Errorf("object = %v, want {100 50}", o.Pos)
+	}
+}
+
+func TestDrawOrderIndex(t *testing.T) {
+	fsys := anchorMap("orthogonal", "unspecified", "")
+	fsys["m.tmx"].Data = []byte(strings.Replace(string(fsys["m.tmx"].Data), `name="o"`, `name="o" draworder="index"`, 1))
+	m, err := Load(fsys, "m.tmx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.Layers[1].(*tilemap.ObjectLayer).DrawOrder; got != tilemap.DrawOrderIndex {
+		t.Errorf("DrawOrder = %v, want index", got)
 	}
 }
 
@@ -344,7 +360,7 @@ func TestLoadExampleMap(t *testing.T) {
 	if len(objects.Objects) != 6 {
 		t.Fatalf("len(Objects) = %d, want 6", len(objects.Objects))
 	}
-	if p := objects.Objects[0]; p.Type != "Player" || p.X != 32 || p.Y != 32 {
+	if p := objects.Objects[0]; p.Type != "Player" || p.Pos != (tilemap.Vector{X: 32, Y: 32}) {
 		t.Errorf("player = %+v, want top-left 32,32", p)
 	}
 

@@ -3,7 +3,6 @@ package tiled
 import (
 	"fmt"
 	"maps"
-	"math"
 
 	gotiled "github.com/lafriks/go-tiled"
 
@@ -22,6 +21,9 @@ func (c *converter) objectLayer(g *gotiled.ObjectGroup) (*tilemap.ObjectLayer, e
 	out := &tilemap.ObjectLayer{
 		LayerBase: layerBase(g.Name, g.Class, g.Visible, g.Opacity, g.OffsetX, g.OffsetY, g.Properties),
 		Objects:   make([]tilemap.MapObject, 0, len(g.Objects)),
+	}
+	if g.DrawOrder == "index" {
+		out.DrawOrder = tilemap.DrawOrderIndex
 	}
 	for _, o := range g.Objects {
 		obj, err := c.object(o)
@@ -77,10 +79,8 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 		ID:       int(src.ID),
 		Name:     src.Name,
 		Type:     src.Type,
-		X:        src.X,
-		Y:        src.Y,
-		W:        src.Width,
-		H:        src.Height,
+		Pos:      tilemap.Vector{X: src.X, Y: src.Y},
+		Size:     tilemap.Vector{X: src.Width, Y: src.Height},
 		Rotation: src.Rotation,
 		Visible:  src.Visible,
 		Opacity:  float64(src.Opacity),
@@ -93,12 +93,13 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 			return tilemap.MapObject{}, err
 		}
 		out.Tile = cell
-		if def := c.m.Tile(cell.Tile); def != nil && out.W == 0 && out.H == 0 {
-			out.W, out.H = float64(def.Src.Dx()), float64(def.Src.Dy())
+		if def := c.m.Tile(cell.Tile); def != nil && out.Size == (tilemap.Vector{}) {
+			out.Size = tilemap.Vector{X: float64(def.Src.Dx()), Y: float64(def.Src.Dy())}
 		}
-		ax, ay := c.objectAnchor(src.GID)
-		out.X, out.Y = anchorToTopLeft(out.X, out.Y, ax*out.W, ay*out.H, out.Rotation)
-		out.Shape = tilemap.Shape{Kind: tilemap.ShapeRect, W: out.W, H: out.H}
+		anchor := c.objectAnchor(src.GID)
+		offset := tilemap.Vector{X: anchor.X * out.Size.X, Y: anchor.Y * out.Size.Y}
+		out.Pos = out.Pos.Sub(offset.Rotate(out.Rotation))
+		out.Shape = tilemap.Shape{Kind: tilemap.ShapeRect, Size: out.Size}
 		return out, nil
 	}
 
@@ -125,7 +126,7 @@ func (c *converter) cell(gid uint32) (tilemap.Cell, error) {
 }
 
 // objectAnchor is where Tiled anchors a tile object, as fractions of its size.
-func (c *converter) objectAnchor(gid uint32) (ax, ay float64) {
+func (c *converter) objectAnchor(gid uint32) tilemap.Vector {
 	bare := gid &^ flipAllMasks
 	alignment := "unspecified"
 	for i := len(c.tm.Tilesets) - 1; i >= 0; i-- {
@@ -137,34 +138,28 @@ func (c *converter) objectAnchor(gid uint32) (ax, ay float64) {
 
 	switch alignment {
 	case "topleft":
-		return 0, 0
+		return tilemap.Vector{X: 0, Y: 0}
 	case "top":
-		return 0.5, 0
+		return tilemap.Vector{X: 0.5, Y: 0}
 	case "topright":
-		return 1, 0
+		return tilemap.Vector{X: 1, Y: 0}
 	case "left":
-		return 0, 0.5
+		return tilemap.Vector{X: 0, Y: 0.5}
 	case "center":
-		return 0.5, 0.5
+		return tilemap.Vector{X: 0.5, Y: 0.5}
 	case "right":
-		return 1, 0.5
+		return tilemap.Vector{X: 1, Y: 0.5}
 	case "bottom":
-		return 0.5, 1
+		return tilemap.Vector{X: 0.5, Y: 1}
 	case "bottomright":
-		return 1, 1
+		return tilemap.Vector{X: 1, Y: 1}
 	case "bottomleft":
-		return 0, 1
+		return tilemap.Vector{X: 0, Y: 1}
 	}
 	if c.m.Orientation == tilemap.OrientationIsometric {
-		return 0.5, 1
+		return tilemap.Vector{X: 0.5, Y: 1}
 	}
-	return 0, 1
-}
-
-// anchorToTopLeft moves the position from the anchor at offset (dx, dy) to the rotated top-left corner.
-func anchorToTopLeft(x, y, dx, dy, rotation float64) (float64, float64) {
-	sin, cos := math.Sincos(rotation * math.Pi / 180)
-	return x - (dx*cos - dy*sin), y - (dx*sin + dy*cos)
+	return tilemap.Vector{X: 0, Y: 1}
 }
 
 // templateGID maps a template's tileset-relative GID onto the map's tileset with the same source.
@@ -183,7 +178,7 @@ func (c *converter) templateGID(t *gotiled.Template) (uint32, error) {
 }
 
 func shape(o *gotiled.Object) tilemap.Shape {
-	s := tilemap.Shape{Kind: tilemap.ShapeRect, W: o.Width, H: o.Height}
+	s := tilemap.Shape{Kind: tilemap.ShapeRect, Size: tilemap.Vector{X: o.Width, Y: o.Height}}
 	switch {
 	case len(o.Polygons) > 0:
 		s.Kind = tilemap.ShapePolygon
@@ -200,13 +195,13 @@ func shape(o *gotiled.Object) tilemap.Shape {
 	return s
 }
 
-func points(ps *gotiled.Points) []tilemap.Point {
+func points(ps *gotiled.Points) []tilemap.Vector {
 	if ps == nil {
 		return nil
 	}
-	out := make([]tilemap.Point, len(*ps))
+	out := make([]tilemap.Vector, len(*ps))
 	for i, p := range *ps {
-		out[i] = tilemap.Point{X: p.X, Y: p.Y}
+		out[i] = tilemap.Vector{X: p.X, Y: p.Y}
 	}
 	return out
 }

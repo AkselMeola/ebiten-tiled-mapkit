@@ -1,9 +1,11 @@
 package render
 
 import (
+	"cmp"
 	"errors"
 	"image"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
@@ -26,8 +28,12 @@ type MapRenderer struct {
 
 	m        *tilemap.Map
 	tiles    []*ebiten.Image
+	textures []*ebiten.Image
 	tried    []bool
 	overdraw image.Rectangle
+	order    []drawItem
+	vertices []ebiten.Vertex
+	indices  []uint32
 	err      error
 }
 
@@ -52,8 +58,10 @@ func (r *MapRenderer) Preload(m *tilemap.Map) error {
 	return errors.Join(errs...)
 }
 
+// Draw draws the map with the camera rounded to whole pixels; AfterLayer receives the rounded camera.
 func (r *MapRenderer) Draw(dst *ebiten.Image, m *tilemap.Map, cam Camera) {
 	r.prepare(m)
+	cam = Camera{X: math.Round(cam.X), Y: math.Round(cam.Y)}
 	r.drawLayers(dst, m.Layers, cam, 0, 0, 1)
 }
 
@@ -90,38 +98,96 @@ func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam
 	c0, r0, c1, r1 := r.Proj.VisibleTiles(r.m, view)
 	c1, r1 = min(c1, l.W-1), min(r1, l.H-1)
 	th := float64(r.m.TileHeight)
+	t := r.clock()
 
+	// Tiles are batched into one DrawTriangles call per run of tiles sharing a texture.
+	var batch *ebiten.Image
 	for row := r0; row <= r1; row++ {
 		for col := c0; col <= c1; col++ {
 			cell := l.Cells[row*l.W+col]
 			if cell.Empty() {
 				continue
 			}
-			id, img := r.frame(cell.Tile, r.clock())
+			id, img := r.frame(cell.Tile, t)
 			if img == nil {
 				continue
 			}
+			if tex := r.textures[id]; tex != batch {
+				r.flush(dst, batch)
+				batch = tex
+			}
 			def := &r.m.Tiles[id]
-
-			op := &ebiten.DrawImageOptions{}
-			_, h := applyFlips(&op.GeoM, cell.Flip, img.Bounds())
+			src := img.Bounds()
+			_, h := flippedSize(cell.Flip, src)
 			x, y := r.Proj.TileToScreen(col, row)
-			op.GeoM.Translate(
+			r.appendQuad(
 				x+float64(def.Offset.X)+ox-cam.X,
 				y+th-h+float64(def.Offset.Y)+oy-cam.Y,
+				src, cell.Flip, float32(alpha),
 			)
-			op.ColorScale.ScaleAlpha(float32(alpha))
-			dst.DrawImage(img, op)
 		}
 	}
+	r.flush(dst, batch)
 }
 
-func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer, cam Camera, ox, oy, alpha float64) {
+type drawItem struct {
+	index int
+	sortY float64
+}
+
+// drawOrder lists the visible tile objects of l in the layer's draw order, reusing buf.
+func drawOrder(l *tilemap.ObjectLayer, buf []drawItem) []drawItem {
+	buf = buf[:0]
 	for i := range l.Objects {
 		o := &l.Objects[i]
 		if !o.Visible || !o.IsTile() {
 			continue
 		}
+		item := drawItem{index: i}
+		if l.DrawOrder == tilemap.DrawOrderTopDown {
+			item.sortY = o.SortY()
+		}
+		buf = append(buf, item)
+	}
+	if l.DrawOrder == tilemap.DrawOrderTopDown {
+		slices.SortStableFunc(buf, func(a, b drawItem) int { return cmp.Compare(a.sortY, b.sortY) })
+	}
+	return buf
+}
+
+// appendQuad adds the tile at src with its top-left corner at x, y, flipped as DrawTile does.
+func (r *MapRenderer) appendQuad(x, y float64, src image.Rectangle, flip tilemap.Flip, alpha float32) {
+	var g ebiten.GeoM
+	applyFlips(&g, flip, src)
+	// Whole pixels: unlike DrawImage, DrawTriangles doesn't snap vertices, so edges would sample neighboring tiles.
+	g.Translate(math.Round(x), math.Round(y))
+
+	base := uint32(len(r.vertices))
+	w, h := float64(src.Dx()), float64(src.Dy())
+	for _, corner := range [4][2]float64{{0, 0}, {w, 0}, {0, h}, {w, h}} {
+		dx, dy := g.Apply(corner[0], corner[1])
+		r.vertices = append(r.vertices, ebiten.Vertex{
+			DstX:   float32(dx),
+			DstY:   float32(dy),
+			SrcX:   float32(float64(src.Min.X) + corner[0]),
+			SrcY:   float32(float64(src.Min.Y) + corner[1]),
+			ColorR: 1, ColorG: 1, ColorB: 1, ColorA: alpha,
+		})
+	}
+	r.indices = append(r.indices, base, base+1, base+2, base+1, base+3, base+2)
+}
+
+func (r *MapRenderer) flush(dst, tex *ebiten.Image) {
+	if len(r.indices) > 0 {
+		dst.DrawTriangles32(r.vertices, r.indices, tex, &ebiten.DrawTrianglesOptions{})
+	}
+	r.vertices, r.indices = r.vertices[:0], r.indices[:0]
+}
+
+func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer, cam Camera, ox, oy, alpha float64) {
+	r.order = drawOrder(l, r.order)
+	for _, item := range r.order {
+		o := &l.Objects[item.index]
 		id, img := r.frame(o.Tile.Tile, r.clock())
 		if img == nil {
 			continue
@@ -129,11 +195,11 @@ func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer,
 
 		op := &ebiten.DrawImageOptions{}
 		w, h := flippedSize(o.Tile.Flip, img.Bounds())
-		if o.W > 0 && o.H > 0 && w > 0 && h > 0 {
-			op.GeoM.Scale(o.W/w, o.H/h)
+		if o.Size.X > 0 && o.Size.Y > 0 && w > 0 && h > 0 {
+			op.GeoM.Scale(o.Size.X/w, o.Size.Y/h)
 		}
 		op.GeoM.Rotate(o.Rotation * math.Pi / 180)
-		op.GeoM.Translate(o.X+ox-cam.X, o.Y+oy-cam.Y)
+		op.GeoM.Translate(o.Pos.X+ox-cam.X, o.Pos.Y+oy-cam.Y)
 		op.ColorScale.ScaleAlpha(float32(alpha * o.Opacity))
 		r.drawTile(dst, img, &r.m.Tiles[id], o.Tile.Flip, op)
 	}
@@ -215,6 +281,7 @@ func (r *MapRenderer) loadTile(id tilemap.TileID) (*ebiten.Image, error) {
 	if err != nil {
 		return nil, err
 	}
+	r.textures[id] = tex
 	if def.Src.Empty() {
 		r.tiles[id] = tex
 	} else {
@@ -236,6 +303,7 @@ func (r *MapRenderer) prepare(m *tilemap.Map) {
 	}
 	r.m = m
 	r.tiles = make([]*ebiten.Image, len(m.Tiles))
+	r.textures = make([]*ebiten.Image, len(m.Tiles))
 	r.tried = make([]bool, len(m.Tiles))
 	r.err = nil
 	r.overdraw = overdraw(m)
