@@ -13,7 +13,7 @@ Planned work is in `TODO.md`. Tick items off as they land.
 - `MapObject.Pos` is the top-left corner, rotation around it, for every adapter. Format-specific
   anchors are converted in the adapter.
 - Animation is a function of time. No per-tile state, no wall-clock time in `Draw`.
-- Adapters never load pixels; `render` does, through a `TextureProvider`.
+- Adapters never load pixels; `render` does, through an `ImageSource`.
 - The library holds no game logic. Game-specific behavior belongs in the example or the game.
 - Isometric is planned (`TODO.md`). Keep screen placement, culling, tile iteration and depth
   sorting behind `Projection`; don't add code that assumes world pixels are screen pixels.

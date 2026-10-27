@@ -24,7 +24,7 @@
 
 - [ ] `docs/TUTORIAL.md`: build a small game step by step, ending close to `examples/coins`.
   - [ ] Make a map in Tiled: tileset, ground and wall layers, an object layer with a player and coins.
-  - [ ] Load and draw it (`FSTextures`, `tiled.Load`, `MapRenderer`).
+  - [ ] Load and draw it (`ImageCache`, `tiled.Load`, `MapRenderer`).
   - [ ] Player entity from the spawn object, tile movement, wall collision via tile class.
   - [ ] Walk animation: idle/walk tiles found by properties, local animation time, flip by direction.
   - [ ] Collect coins: hide objects on pickup, count in a HUD.

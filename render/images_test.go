@@ -16,7 +16,7 @@ func TestImages(t *testing.T) {
 	}
 	fsys := fstest.MapFS{"ui/button.png": {Data: buf.Bytes()}}
 
-	images := NewImages(NewFSTextures(fsys)).Add("button", "ui/button.png")
+	images := NewImages(NewImageCache(fsys)).Add("button", "ui/button.png")
 	if err := images.Preload(); err != nil {
 		t.Fatal(err)
 	}

@@ -58,12 +58,12 @@ type Game struct {
 }
 
 func main() {
-	// Textures live as long as the game. Every level (and UI image) loads through them, so each
-	// image file is decoded only once.
-	textures := render.NewFSTextures(assets)
+	// The image cache lives as long as the game. Every level (and UI image) loads through it, so
+	// each image file is decoded only once.
+	cache := render.NewImageCache(assets)
 
 	game := &Game{}
-	if err := game.startLevel(textures, "assets/coins.tmx"); err != nil {
+	if err := game.startLevel(cache, "assets/coins.tmx"); err != nil {
 		log.Fatal(err)
 	}
 
@@ -75,7 +75,7 @@ func main() {
 }
 
 // startLevel loads a map and everything that belongs to it. Switching levels is calling it again.
-func (g *Game) startLevel(textures render.TextureProvider, path string) error {
+func (g *Game) startLevel(cache render.ImageSource, path string) error {
 	tileMap, err := tiled.Load(assets, path)
 	if err != nil {
 		return err
@@ -83,7 +83,7 @@ func (g *Game) startLevel(textures render.TextureProvider, path string) error {
 
 	// The renderer draws this one map. It loads the map's images now, so a missing file fails
 	// here, not mid-game. Its clock drives the animated tiles (water, coins).
-	renderer, err := render.NewMapRenderer(textures, tileMap)
+	renderer, err := render.NewMapRenderer(cache, tileMap)
 	if err != nil {
 		return err
 	}

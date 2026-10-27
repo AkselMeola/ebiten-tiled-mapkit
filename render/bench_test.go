@@ -11,9 +11,9 @@ import (
 	"github.com/AkselMeola/ebiten-tiled-mapkit/tilemap"
 )
 
-type memTextures struct{ img *ebiten.Image }
+type memImages struct{ img *ebiten.Image }
 
-func (t memTextures) Texture(tilemap.ImageRef) (*ebiten.Image, error) { return t.img, nil }
+func (t memImages) Image(tilemap.ImageRef) (*ebiten.Image, error) { return t.img, nil }
 
 // benchMap is 200x200 tiles of 16 px with three full tile layers and some animated tiles.
 func benchMap() *tilemap.Map {
@@ -44,7 +44,7 @@ func BenchmarkDrawFullHD(b *testing.B) {
 	var dst *ebiten.Image
 	inFrame(func() {
 		var err error
-		if r, err = NewMapRenderer(memTextures{ebiten.NewImage(256, 256)}, m); err != nil {
+		if r, err = NewMapRenderer(memImages{ebiten.NewImage(256, 256)}, m); err != nil {
 			b.Fatal(err)
 		}
 		dst = ebiten.NewImage(1920, 1080)

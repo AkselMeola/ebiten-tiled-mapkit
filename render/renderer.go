@@ -21,14 +21,14 @@ type Camera struct {
 // LayerHook runs after every layer, visible or not, so the game can draw its entities in between.
 type LayerHook func(dst *ebiten.Image, l tilemap.Layer, cam Camera)
 
-// MapRenderer draws one map. Create one per map: images are shared through the TextureProvider,
+// MapRenderer draws one map. Create one per map: images are shared through the ImageSource,
 // so a new renderer only cuts tiles from images already loaded.
 type MapRenderer struct {
 	AfterLayer LayerHook
 
 	m        *tilemap.Map
 	proj     Projection
-	textures TextureProvider
+	source   ImageSource
 	clock    time.Duration
 	tiles    []*ebiten.Image
 	parents  []*ebiten.Image
@@ -39,14 +39,14 @@ type MapRenderer struct {
 }
 
 // NewMapRenderer loads every image m uses and returns all load errors.
-func NewMapRenderer(textures TextureProvider, m *tilemap.Map) (*MapRenderer, error) {
+func NewMapRenderer(source ImageSource, m *tilemap.Map) (*MapRenderer, error) {
 	if m.Orientation != tilemap.OrientationOrthogonal && m.Orientation != tilemap.OrientationUnknown {
 		return nil, fmt.Errorf("render: only orthogonal maps are supported, got orientation %d", m.Orientation)
 	}
 	r := &MapRenderer{
 		m:        m,
 		proj:     NewOrthogonal(m),
-		textures: textures,
+		source:   source,
 		tiles:    make([]*ebiten.Image, len(m.Tiles)),
 		parents:  make([]*ebiten.Image, len(m.Tiles)),
 		overdraw: overdraw(m),
@@ -59,7 +59,7 @@ func NewMapRenderer(textures TextureProvider, m *tilemap.Map) (*MapRenderer, err
 	}
 	for l := range m.AllLayers() {
 		if l, ok := l.(*tilemap.ImageLayer); ok && l.Image != "" {
-			if _, err := textures.Texture(l.Image); err != nil {
+			if _, err := source.Image(l.Image); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -131,7 +131,7 @@ func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam
 	th := float64(r.m.TileHeight)
 	t := r.clock
 
-	// Tiles are batched into one DrawTriangles call per run of tiles sharing a texture.
+	// Tiles are batched into one DrawTriangles call per run of tiles sharing a tileset image.
 	var batch *ebiten.Image
 	for row := r0; row <= r1; row++ {
 		for col := c0; col <= c1; col++ {
@@ -262,7 +262,7 @@ func (r *MapRenderer) drawImageLayer(dst *ebiten.Image, l *tilemap.ImageLayer, c
 	if l.Image == "" {
 		return
 	}
-	img, err := r.textures.Texture(l.Image)
+	img, err := r.source.Image(l.Image)
 	if err != nil {
 		return
 	}
@@ -290,7 +290,7 @@ func (r *MapRenderer) loadTile(id tilemap.TileID) error {
 	if def.Image == "" {
 		return nil
 	}
-	tex, err := r.textures.Texture(def.Image)
+	tex, err := r.source.Image(def.Image)
 	if err != nil {
 		return err
 	}

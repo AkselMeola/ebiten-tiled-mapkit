@@ -138,7 +138,7 @@ func TestNewMapRenderer(t *testing.T) {
 		{}, tile(image.Rect(0, 0, 16, 16)), tile(image.Rect(16, 0, 32, 16)),
 	}}
 
-	r, err := NewMapRenderer(NewFSTextures(fsys), m)
+	r, err := NewMapRenderer(NewImageCache(fsys), m)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,13 +147,13 @@ func TestNewMapRenderer(t *testing.T) {
 	}
 
 	m.Layers = []tilemap.Layer{&tilemap.GroupLayer{Layers: []tilemap.Layer{&tilemap.ImageLayer{Image: "sky.png"}}}}
-	if _, err := NewMapRenderer(NewFSTextures(fsys), m); err == nil || !strings.Contains(err.Error(), "sky.png") {
+	if _, err := NewMapRenderer(NewImageCache(fsys), m); err == nil || !strings.Contains(err.Error(), "sky.png") {
 		t.Errorf("error = %v, want one naming sky.png", err)
 	}
 
 	m.Layers = nil
 	m.Orientation = tilemap.OrientationIsometric
-	if _, err := NewMapRenderer(NewFSTextures(fsys), m); err == nil {
+	if _, err := NewMapRenderer(NewImageCache(fsys), m); err == nil {
 		t.Error("isometric map: no error")
 	}
 }

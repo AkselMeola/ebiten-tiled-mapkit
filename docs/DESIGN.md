@@ -8,7 +8,7 @@ Tiled adapter ─┐
 (Text adapter) ┴─► tilemap.Map (pure data) ─► render.MapRenderer (Ebiten)
                                                 ├─ Projection (orthogonal; isometric later)
                                                 ├─ animation clock
-                                                └─ TextureProvider
+                                                └─ ImageSource
 ```
 
 ## Goals
@@ -23,7 +23,7 @@ Tiled adapter ─┐
 ```
 tilemap/   domain model; no Ebiten, no Tiled imports
 tiled/     adapter: .tmx -> tilemap.Map
-render/    Ebiten renderer, projections, textures, named images
+render/    Ebiten renderer, projections, image cache, named images
 examples/  example games
 ```
 
@@ -188,16 +188,16 @@ type Projection interface {
     VisibleTiles(m *tilemap.Map, view image.Rectangle) (c0, r0, c1, r1 int) // inclusive
 }
 
-type TextureProvider interface {
-    Texture(ref tilemap.ImageRef) (*ebiten.Image, error)
+type ImageSource interface {
+    Image(ref tilemap.ImageRef) (*ebiten.Image, error)
 }
 
 type MapRenderer struct {
     AfterLayer LayerHook // runs after every layer, visible or not
-    // map, projection, textures, clock and caches are private
+    // map, projection, image source, clock and caches are private
 }
 
-func NewMapRenderer(textures TextureProvider, m *tilemap.Map) (*MapRenderer, error)
+func NewMapRenderer(source ImageSource, m *tilemap.Map) (*MapRenderer, error)
 func (r *MapRenderer) Update()
 func (r *MapRenderer) Clock() time.Duration
 func (r *MapRenderer) Projection() Projection
@@ -209,7 +209,7 @@ func (r *MapRenderer) DrawTile(dst *ebiten.Image, cell tilemap.Cell, t time.Dura
 or unknown for hand-built maps; others are an error until implemented), loads every tile and image
 layer image and returns all errors, and cuts the tile sub-images. Nothing can go stale: there is no
 `SetMap`, and a renderer is never half set up. Switching levels means a new renderer; decoded
-images live in the `TextureProvider`, which the game keeps for its whole run and shares with
+images live in the `ImageSource`, which the game keeps for its whole run and shares with
 `Images`.
 
 Draw walks `Map.Layers` in order with a type switch, skipping invisible layers and accumulating
@@ -230,9 +230,9 @@ Implementation notes:
 
 - **Sub-image cache.** `SubImage` allocates; tile images are cached in a `[]*ebiten.Image` indexed by
   `TileID`, built by the constructor.
-- **Textures via `fs.FS`.** `FSTextures` loads and caches images, errors included. Adapters never
+- **Images via `fs.FS`.** `ImageCache` loads and caches images, errors included. Adapters never
   touch pixels, so they run headless in tests. `Images` names images and sheet regions outside the
-  map (UI) on top of a `TextureProvider`, sharing its cache; regions are checked against the image.
+  map (UI) on top of an `ImageSource`, sharing its cache; regions are checked against the image.
 - **Culling margins.** Tiles can extend outside their cell (larger than the grid, or offset). The
   renderer computes how far once per map and widens the view before calling `VisibleTiles`.
 - **Tile layer batching.** One `DrawTriangles32` call per run of tiles sharing a tileset image,
@@ -249,8 +249,8 @@ Implementation notes:
 
 ## Load and run lifecycle
 
-At startup: `FSTextures`, and `Images` for UI graphics.
-Per level: adapter → `tilemap.Map`, then `NewMapRenderer(textures, m)`.
+At startup: `ImageCache`, and `Images` for UI graphics.
+Per level: adapter → `tilemap.Map`, then `NewMapRenderer(cache, m)`.
 Per frame: `renderer.Update()` in `Update`, `renderer.Draw(screen, cam)` in `Draw`.
 
 ## Roadmap

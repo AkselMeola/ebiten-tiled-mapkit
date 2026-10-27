@@ -14,8 +14,8 @@ import (
 
 // Images is a set of named images outside the map, such as UI graphics.
 type Images struct {
-	textures TextureProvider
-	entries  map[string]imageEntry
+	source  ImageSource
+	entries map[string]imageEntry
 }
 
 type imageEntry struct {
@@ -24,9 +24,9 @@ type imageEntry struct {
 	img    *ebiten.Image
 }
 
-// NewImages loads through textures; pass the renderer's to share its cache.
-func NewImages(textures TextureProvider) *Images {
-	return &Images{textures: textures, entries: make(map[string]imageEntry)}
+// NewImages loads through source, usually the game's ImageCache.
+func NewImages(source ImageSource) *Images {
+	return &Images{source: source, entries: make(map[string]imageEntry)}
 }
 
 // Add registers the image at path under name, replacing an earlier one.
@@ -69,7 +69,7 @@ func (i *Images) load(name string) (*ebiten.Image, error) {
 	if e.img != nil {
 		return e.img, nil
 	}
-	img, err := i.textures.Texture(e.path)
+	img, err := i.source.Image(e.path)
 	if err != nil {
 		return nil, err
 	}

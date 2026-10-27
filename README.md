@@ -58,13 +58,13 @@ type game struct {
 }
 
 func main() {
-	textures := render.NewFSTextures(assets) // for the whole game: maps and UI images
+	cache := render.NewImageCache(assets) // for the whole game: maps and UI images
 
 	m, err := tiled.Load(assets, "maps/level1.tmx")
 	if err != nil {
 		log.Fatal(err)
 	}
-	r, err := render.NewMapRenderer(textures, m) // loads the map's images, reports missing ones
+	r, err := render.NewMapRenderer(cache, m) // loads the map's images, reports missing ones
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -91,10 +91,10 @@ Embed everything the map references.
 
 ### Lifetimes
 
-- **Textures** (`FSTextures`) live as long as the game. Create them at startup; UI images
-  (`render.Images`) load through them too.
+- **The image cache** (`ImageCache`) lives as long as the game. Create it at startup; UI images
+  (`render.Images`) load through it too.
 - **A map and its renderer** live as long as the level. A renderer draws one map; for another
-  level, load the map and create a new renderer with the same textures. Images already loaded
+  level, load the map and create a new renderer with the same cache. Images already loaded
   are reused, so that is cheap.
 
 ## Example
@@ -205,12 +205,12 @@ To switch animation by state or direction, give each animated tile properties in
 ## Other images
 
 `render.Images` holds named images outside the map, such as UI graphics. It needs no map: create
-it at startup with the game's textures, so images used by both are loaded once.
+it at startup with the game's image cache, so images used by both are loaded once.
 
 ```go
-textures := render.NewFSTextures(assets)
+cache := render.NewImageCache(assets)
 
-ui := render.NewImages(textures).
+ui := render.NewImages(cache).
 	Add("button", "images/ui/button.png").
 	Add("heart", "images/ui/heart.png").
 	AddRegion("checkbox", "images/ui/sheet.png", image.Rect(0, 0, 16, 16)) // part of a sheet
@@ -237,7 +237,7 @@ image and scale that.
 |---|---|
 | `tilemap` | Data model: `Map`, `TileDef`, layers, `MapObject`, `Properties`. No Ebiten or Tiled imports. |
 | `tiled` | `Load(fsys, path)`: Tiled `.tmx` → `tilemap.Map`. |
-| `render` | `MapRenderer`, `Projection` (`Orthogonal`), `FSTextures`, `Images`. |
+| `render` | `MapRenderer`, `Projection` (`Orthogonal`), `ImageCache`, `Images`. |
 
 ## Tiled support
 
