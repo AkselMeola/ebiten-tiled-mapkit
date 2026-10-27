@@ -16,7 +16,8 @@ Planned work is in `TODO.md`. Tick items off as they land.
 - Adapters never load pixels; `render` does, through an `ImageSource`.
 - The library holds no game logic. Game-specific behavior belongs in the example or the game.
 - Isometric is planned (`TODO.md`). Keep screen placement, culling, tile iteration and depth
-  sorting behind `Projection`; don't add code that assumes world pixels are screen pixels.
+  sorting behind the internal `projection`, and world ↔ screen behind `WorldToScreen` and
+  `ScreenToWorld`; don't add code that assumes world pixels are screen pixels.
 - Stay lightweight: map loading and drawing only. Prefer a small hook or helper over a framework.
 
 ## Commands

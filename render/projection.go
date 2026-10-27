@@ -3,49 +3,36 @@ package render
 
 import (
 	"image"
-	"math"
 
 	"github.com/AkselMeola/ebiten-tiled-mapkit/tilemap"
 )
 
-type Projection interface {
-	// TileToScreen is p's top-left corner in world pixels.
-	TileToScreen(p tilemap.TilePos) (x, y float64)
-	// ScreenToTile is the tile at world pixel x, y.
-	ScreenToTile(x, y float64) tilemap.TilePos
-	Bounds(m *tilemap.Map) image.Rectangle
-	// VisibleTiles returns the inclusive tile range covering view; empty when c0 > c1 or r0 > r1.
-	VisibleTiles(m *tilemap.Map, view image.Rectangle) (c0, r0, c1, r1 int)
+// projection places tiles for one map orientation. Placement and culling go through it, so other
+// orientations only add an implementation.
+type projection interface {
+	// tileToWorld is p's top-left corner in world pixels.
+	tileToWorld(p tilemap.TilePos) (x, y float64)
+	// visibleTiles returns the inclusive tile range covering view; empty when c0 > c1 or r0 > r1.
+	visibleTiles(m *tilemap.Map, view image.Rectangle) (c0, r0, c1, r1 int)
 }
 
-type Orthogonal struct {
-	TileWidth, TileHeight int
+type orthogonal struct {
+	tileWidth, tileHeight int
 }
 
-func NewOrthogonal(m *tilemap.Map) Orthogonal {
-	return Orthogonal{TileWidth: m.TileWidth, TileHeight: m.TileHeight}
+func newOrthogonal(m *tilemap.Map) orthogonal {
+	return orthogonal{tileWidth: m.TileWidth, tileHeight: m.TileHeight}
 }
 
-func (o Orthogonal) TileToScreen(p tilemap.TilePos) (x, y float64) {
-	return float64(p.Col * o.TileWidth), float64(p.Row * o.TileHeight)
+func (o orthogonal) tileToWorld(p tilemap.TilePos) (x, y float64) {
+	return float64(p.Col * o.tileWidth), float64(p.Row * o.tileHeight)
 }
 
-func (o Orthogonal) ScreenToTile(x, y float64) tilemap.TilePos {
-	return tilemap.TilePos{
-		Col: floorDiv(int(math.Floor(x)), o.TileWidth),
-		Row: floorDiv(int(math.Floor(y)), o.TileHeight),
-	}
-}
-
-func (o Orthogonal) Bounds(m *tilemap.Map) image.Rectangle {
-	return image.Rect(0, 0, m.Width*o.TileWidth, m.Height*o.TileHeight)
-}
-
-func (o Orthogonal) VisibleTiles(m *tilemap.Map, view image.Rectangle) (c0, r0, c1, r1 int) {
-	c0 = max(0, floorDiv(view.Min.X, o.TileWidth))
-	r0 = max(0, floorDiv(view.Min.Y, o.TileHeight))
-	c1 = min(m.Width-1, floorDiv(view.Max.X-1, o.TileWidth))
-	r1 = min(m.Height-1, floorDiv(view.Max.Y-1, o.TileHeight))
+func (o orthogonal) visibleTiles(m *tilemap.Map, view image.Rectangle) (c0, r0, c1, r1 int) {
+	c0 = max(0, floorDiv(view.Min.X, o.tileWidth))
+	r0 = max(0, floorDiv(view.Min.Y, o.tileHeight))
+	c1 = min(m.Width-1, floorDiv(view.Max.X-1, o.tileWidth))
+	r1 = min(m.Height-1, floorDiv(view.Max.Y-1, o.tileHeight))
 	return c0, r0, c1, r1
 }
 

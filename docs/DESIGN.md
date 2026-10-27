@@ -1,12 +1,12 @@
 # Design
 
 mapkit loads tile maps through pluggable adapters into a format-agnostic domain model, which a
-renderer draws with Ebiten through a swappable projection.
+renderer draws with Ebiten through a projection chosen by the map's orientation.
 
 ```
 Tiled adapter ─┐
 (Text adapter) ┴─► tilemap.Map (pure data) ─► render.MapRenderer (Ebiten)
-                                                ├─ Projection (orthogonal; isometric later)
+                                                ├─ projection (internal; orthogonal, isometric later)
                                                 ├─ animation clock
                                                 └─ ImageSource
 ```
@@ -15,7 +15,7 @@ Tiled adapter ─┐
 
 - Load Tiled maps and parse tile layers, tiles, tileset images, objects and custom properties.
 - Keep the domain independent of Tiled, so other adapters (text, JSON) can produce the same `Map`.
-- Render a `Map` with swappable projections.
+- Render a `Map` with a projection per orientation, without games depending on it.
 - Animate tiles with a shared clock, and let games animate their own entities with the same data.
 
 ## Packages and dependency rule
@@ -104,7 +104,7 @@ type MapObject struct {
 `Pos` is the top-left corner and rotation turns around it. The Tiled adapter converts, including for
 rotated objects; the conversion is lossless. `Bounds()` returns the rotated AABB and `SortY()` its
 bottom edge for depth sorting. `Center()` and `Foot()` (bottom center) also follow rotation.
-`Map.ObjectTile(o)` is the tile under an object's center; `Map.ObjectsAt(pos)` yields the visible
+`Map.WorldToTile(o.Center())` is the tile an object stands on; `Map.ObjectsAt(pos)` yields the visible
 objects whose bounds contain the tile's center (points: their tile). It scans, with no index to go
 stale when the game hides objects; games index the objects they move themselves.
 
@@ -192,13 +192,6 @@ state lives on the game entity, which outlives the object it was spawned from.
 ## Renderer (`render`)
 
 ```go
-type Projection interface {
-    TileToScreen(p tilemap.TilePos) (x, y float64)    // world pixels
-    ScreenToTile(x, y float64) tilemap.TilePos       // from world pixels
-    Bounds(m *tilemap.Map) image.Rectangle
-    VisibleTiles(m *tilemap.Map, view image.Rectangle) (c0, r0, c1, r1 int) // inclusive
-}
-
 type ImageSource interface {
     Image(ref tilemap.ImageRef) (*ebiten.Image, error)
 }
@@ -211,12 +204,21 @@ type MapRenderer struct {
 func NewMapRenderer(source ImageSource, m *tilemap.Map) (*MapRenderer, error)
 func (r *MapRenderer) Update()
 func (r *MapRenderer) Clock() time.Duration
-func (r *MapRenderer) Projection() Projection
-func (r *MapRenderer) TileAtScreen(x, y int, cam Camera) tilemap.TilePos // e.g. under the mouse
 func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera)
-func (r *MapRenderer) DrawTileInWorld(dst *ebiten.Image, cell tilemap.Cell, pos tilemap.Vector, cam Camera, t time.Duration, op *ebiten.DrawImageOptions)
-func (r *MapRenderer) DrawTileOnScreen(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions)
+func (r *MapRenderer) DrawTile(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions)
+func (r *MapRenderer) WorldToScreen(pos tilemap.Vector, cam Camera) (x, y float64)
+func (r *MapRenderer) ScreenToWorld(x, y int, cam Camera) tilemap.Vector
 ```
+
+**Coordinates.** Three spaces: screen pixels, world pixels (`Vector`, like `MapObject.Pos`) and
+tiles (`TilePos`). Each conversion lives with its knowledge: the renderer converts screen ↔ world
+(camera, rounded as in `Draw`, and later the projection), the map converts world ↔ tile
+(`WorldToTile`, `TileToWorld`), so game logic needs no renderer. Everything else composes from
+these four; there are no per-combination helpers. `WorldToScreen` returns `x, y` so it plugs into
+`GeoM.Translate` for any image, which is why there is no world-space draw method.
+
+The projection is internal (`projection`: `tileToWorld`, `visibleTiles`): the renderer picks it
+from the orientation and games never see it.
 
 **One renderer per map.** The constructor picks the projection from `Map.Orientation` (orthogonal,
 or unknown for hand-built maps; others are an error until implemented), loads every tile and image
@@ -230,17 +232,14 @@ group offsets and opacity. The camera is rounded to whole pixels first, and `Aft
 the rounded camera so entities stay aligned with the map. For a tile layer it culls to the visible
 range and adds one quad per cell to a vertex batch: resolve animation, anchor bottom-left in the
 cell (tiles larger than the grid stick out upward, as in Tiled), add tile offset, layer offset and
-camera, and flip the corners as `DrawTileOnScreen` does. Object layers draw only tile objects; other
+camera, and flip the corners as `DrawTile` does. Object layers draw only tile objects; other
 objects have no visuals. An object layer's `DrawOrder` is `DrawOrderTopDown` (sorted by `SortY()`,
 stable; the zero value and Tiled's default) or `DrawOrderIndex` (file order). Sorting happens every
 frame so objects the game moves stay correct; the index buffer is reused.
 
-Game entities use the same tile drawing, named by coordinate space. `DrawTileInWorld` takes a world
-position and the camera; the renderer places the tile (rounding the camera as `Draw` does), so
-games never convert world to screen themselves and stay correct when other projections arrive. Its
-`op.GeoM` is tile-local, applied before placing. `DrawTileOnScreen` takes `op.GeoM` as the whole
-transform to the screen, for HUDs and custom transforms. Both apply flips and tile offset first.
-Entities are drawn from the `AfterLayer` hook so they interleave with map layers.
+`DrawTile` exposes the same tile drawing for game entities: flips and tile offset first, then the
+caller's `op` in screen pixels. For a world position, `op.GeoM.Translate(r.WorldToScreen(pos,
+cam))`. Entities are drawn from the `AfterLayer` hook so they interleave with map layers.
 
 Implementation notes:
 
@@ -250,7 +249,7 @@ Implementation notes:
   touch pixels, so they run headless in tests. `Images` names images and sheet regions outside the
   map (UI) on top of an `ImageSource`, sharing its cache; regions are checked against the image.
 - **Culling margins.** Tiles can extend outside their cell (larger than the grid, or offset). The
-  renderer computes how far once per map and widens the view before calling `VisibleTiles`.
+  renderer computes how far once per map and widens the view before calling `visibleTiles`.
 - **Tile layer batching.** One `DrawTriangles32` call per run of tiles sharing a tileset image,
   so a single-tileset layer is one call; a texture change flushes the batch, keeping draw order.
   The vertex and index slices are reused between frames. `BenchmarkDrawFullHD` (25k tiles):
@@ -274,11 +273,11 @@ Per frame: `renderer.Update()` in `Update`, `renderer.Draw(screen, cam)` in `Dra
 Done: domain model; Tiled adapter (CSV/XML/base64 + zlib/gzip, embedded and external tilesets, atlas
 and image-collection tilesets, animations, flips, offsets, colliders, objects, templates, group and
 image layers, properties); orthogonal projection with culling; shared-clock animation; flips;
-object layers and tile objects; layer opacity and offsets; `DrawTileInWorld` and `DrawTileOnScreen` for entities.
+object layers and tile objects; layer opacity and offsets; `DrawTile` and coordinate conversions for entities.
 
 Next, roughly in order:
 
-1. Isometric projection, which validates the `Projection` abstraction, then draw order as a strategy
+1. Isometric projection, which validates the `projection` abstraction, then draw order as a strategy
    rather than a subclass.
 2. Text adapter, to validate that the domain is truly format-agnostic.
 3. `.tmj` maps; infinite maps (normalize chunks to one grid on load); zstd.

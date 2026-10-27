@@ -261,7 +261,27 @@ func TestObjectsAt(t *testing.T) {
 		}
 	}
 
-	if got := m.ObjectTile(&m.Layers[0].(*ObjectLayer).Objects[0]); got != (TilePos{1, 0}) {
-		t.Errorf("ObjectTile = %v", got)
+}
+
+func TestWorldToTile(t *testing.T) {
+	m := &Map{TileWidth: 16, TileHeight: 8}
+	cases := []struct {
+		world Vector
+		want  TilePos
+	}{
+		{Vector{47.9, 16}, TilePos{2, 2}},
+		{Vector{48, 15.9}, TilePos{3, 1}},
+		{Vector{-0.5, -9}, TilePos{-1, -2}},
+	}
+	for _, tc := range cases {
+		if got := m.WorldToTile(tc.world); got != tc.want {
+			t.Errorf("WorldToTile(%v) = %v, want %v", tc.world, got, tc.want)
+		}
+	}
+	if got := m.TileToWorld(TilePos{3, 2}); got != (Vector{48, 16}) {
+		t.Errorf("TileToWorld = %v", got)
+	}
+	if got := m.WorldToTile(m.TileToWorld(TilePos{-2, 5})); got != (TilePos{-2, 5}) {
+		t.Errorf("round trip = %v", got)
 	}
 }

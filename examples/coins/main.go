@@ -176,7 +176,7 @@ func moveToward(current, target float64) float64 {
 // isBlocked reports whether the tile at the pixel position can't be entered. Walls are marked
 // in Tiled by giving their tiles the class "Wall"; outside the map there is no tile at all.
 func (g *Game) isBlocked(position tilemap.Vector) bool {
-	tilePos := g.renderer.Projection().ScreenToTile(position.X, position.Y)
+	tilePos := g.tileMap.WorldToTile(position)
 	tileDef := g.tileMap.TileDef(g.groundLayer.At(tilePos).TileID)
 	return tileDef == nil || tileDef.Class == "Wall"
 }
@@ -219,10 +219,11 @@ func (g *Game) drawPlayer(screen *ebiten.Image, layer tilemap.Layer, camera rend
 		animationTime = 0
 	}
 
-	// DrawTileInWorld draws a map tile at the player's world position: the renderer applies the
-	// camera, the flip and the animation frame.
-	cell := tilemap.Cell{TileID: player.tile, Flip: player.flip}
-	g.renderer.DrawTileInWorld(screen, cell, player.position, camera, animationTime, nil)
+	// WorldToScreen turns the player's world position into a screen position, applying the camera.
+	options := &ebiten.DrawImageOptions{}
+	options.GeoM.Translate(g.renderer.WorldToScreen(player.position, camera))
+	// DrawTile draws a map tile for the game's own entity, with the flip and animation frame.
+	g.renderer.DrawTile(screen, tilemap.Cell{TileID: player.tile, Flip: player.flip}, animationTime, options)
 }
 
 // Layout makes the game's screen exactly the map's size; Ebiten scales it up to the window.

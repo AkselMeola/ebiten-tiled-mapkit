@@ -144,14 +144,33 @@ for layer := range m.TileLayers() { // groups included, in draw order
 - `m.InBounds(pos)` checks a position against the map size.
 - `Map.AllLayers()` yields every layer of any kind, for anything else.
 
-Converting pixels to tiles:
+### Coordinates
+
+There are three kinds of position, and each conversion lives where its knowledge is:
+
+```
+screen pixels  ◄── renderer, camera ──►  world pixels  ◄── map, tile size ──►  tiles
+```
+
+- **World pixels** (`tilemap.Vector`): where things are on the map, like `MapObject.Pos`.
+- **Screen pixels**: where they appear, after the camera.
+- **Tiles** (`tilemap.TilePos`): grid positions.
+
+| From → to | Call |
+|---|---|
+| world → tile | `m.WorldToTile(pos)` |
+| tile → world | `m.TileToWorld(tile)` (top-left corner) |
+| world → screen | `renderer.WorldToScreen(pos, cam)` returns `x, y` |
+| screen → world | `renderer.ScreenToWorld(x, y, cam)` |
 
 ```go
 x, y := ebiten.CursorPosition()
-hovered := renderer.TileAtScreen(x, y, cam) // the tile drawn under the mouse
+hovered := m.WorldToTile(renderer.ScreenToWorld(x, y, cam)) // the tile under the mouse
 
-standing := renderer.Projection().ScreenToTile(player.Pos.X, player.Pos.Y) // world pixels
+standing := m.WorldToTile(player.Pos) // game logic needs no renderer
 ```
+
+Map conversions work without a renderer, so game logic and tests only need the map.
 
 ### Objects
 
@@ -180,13 +199,12 @@ Positions and sizes are `tilemap.Vector` (`struct{ X, Y float64 }`) with `Add`, 
 `Rotate`. Vectors compare with `==`, and a game's own vector type with the same fields converts
 directly: `myVector(o.Pos)`.
 
-`m.ObjectTile(o)` is the tile an object stands on (the one under its center), and
-`m.ObjectsAt(pos)` yields the visible objects covering a tile, for example to select one with the
-mouse:
+`m.WorldToTile(o.Center())` is the tile an object stands on, and `m.ObjectsAt(pos)` yields the
+visible objects covering a tile, for example to select one with the mouse:
 
 ```go
 x, y := ebiten.CursorPosition()
-for o := range m.ObjectsAt(renderer.TileAtScreen(x, y, cam)) {
+for o := range m.ObjectsAt(m.WorldToTile(renderer.ScreenToWorld(x, y, cam))) {
 	if o.Type == "Door" { ... }
 }
 ```
@@ -225,22 +243,24 @@ r.AfterLayer = func(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
 	if l.Base().Name != "objects" {
 		return
 	}
-	cell := tilemap.Cell{TileID: player.tile, Flip: player.flip}
-	r.DrawTileInWorld(dst, cell, player.pos, cam, r.Clock()-player.animStart, nil)
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(r.WorldToScreen(player.pos, cam))
+	r.DrawTile(dst, tilemap.Cell{TileID: player.tile, Flip: player.flip}, r.Clock()-player.animStart, op)
 
-	faded := &ebiten.DrawImageOptions{}
-	faded.ColorScale.ScaleAlpha(0.5)
-	r.DrawTileInWorld(dst, ghost.cell, ghost.pos, cam, r.Clock(), faded)
+	// Any image works the same way, here half transparent.
+	op = &ebiten.DrawImageOptions{}
+	op.ColorScale.ScaleAlpha(0.5)
+	op.GeoM.Translate(r.WorldToScreen(selected.pos, cam))
+	dst.DrawImage(ui.Get("selector"), op)
 }
 ```
 
 - `AfterLayer` runs after every layer, visible or not, in draw order.
-- `DrawTileInWorld` draws a tile with its top-left corner at a world position, the same kind of
-  position as `MapObject.Pos`. The renderer applies the camera, the cell's flips and the tile
-  offset. Options may be nil: their colors and blending apply as given, and their `GeoM` adjusts
-  the tile around its top-left corner (scale, rotate) before it is placed.
-- `DrawTileOnScreen` takes screen coordinates instead: the tile's top-left corner is at the origin
-  of `op.GeoM`, with no camera. Use it for HUDs and menus.
+- `WorldToScreen` turns a world position into screen coordinates and plugs into
+  `GeoM.Translate`, for tiles, images, text or shapes. Scale or rotate before translating to turn
+  around the top-left corner.
+- `DrawTile` draws a map tile with the cell's flips and the tile offset, then your `op`. Its
+  top-left corner is at the origin of `op.GeoM`, in screen pixels, so it works for HUDs too.
 - The time argument picks the animation frame. `r.Clock()` keeps the tile in sync with the map,
   and `r.Clock() - start` plays the animation from its first frame since `start`. Restarting,
   pausing or changing speed is just changing that number.
@@ -286,7 +306,7 @@ image and scale that.
 |---|---|
 | `tilemap` | Data model: `Map`, `TileDef`, layers, `MapObject`, `Properties`. No Ebiten or Tiled imports. |
 | `tiled` | `Load(fsys, path)`: Tiled `.tmx` → `tilemap.Map`. |
-| `render` | `MapRenderer`, `Projection` (`Orthogonal`), `ImageCache`, `Images`. |
+| `render` | `MapRenderer`, `ImageCache`, `Images`. |
 
 ## Tiled support
 

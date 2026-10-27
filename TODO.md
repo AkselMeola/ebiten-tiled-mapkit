@@ -36,15 +36,16 @@
 
 ## Isometric
 
-- [ ] `Isometric` projection: `TileToScreen` `((c−r)·w/2, (c+r)·h/2)`, `ScreenToTile`, `Bounds`.
+- [ ] `isometric` projection: `tileToWorld` `((c−r)·w/2, (c+r)·h/2)`, `visibleTiles`.
 - [ ] Culling: the view is a diamond in tile space. Let the projection drive tile iteration instead
       of the renderer looping over a `c0..c1 × r0..r1` rectangle.
 - [ ] Tile image anchor from the projection (Tiled centers images horizontally in isometric maps).
-- [ ] `Projection.WorldToScreen(Vector)`: isometric object positions are in tile-axis space, not
-      screen pixels. Use it in `drawObjectLayer`, `DrawObject`, `DrawTileInWorld` and for
-      y-sorting (depth is the foot's screen y, not `SortY()`).
+- [ ] `MapRenderer.WorldToScreen` and `ScreenToWorld` through the projection: isometric object
+      positions are in tile-axis space, not screen pixels. `drawObjectLayer` already uses
+      `WorldToScreen`; also `DrawObject` and y-sorting (depth is the foot's screen y, not `SortY()`).
 - [ ] Tiled adapter: tile object anchor is bottom-center in isometric maps.
-- [ ] `Map.ObjectTile` and `ObjectsAt`: isometric object positions are in tile-axis space.
+- [ ] `Map.WorldToTile`, `TileToWorld` and `ObjectsAt`: isometric object positions are in
+      tile-axis space.
 - [ ] Staggered and hexagonal: own projections, later.
 
 ## Performance

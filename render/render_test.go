@@ -43,19 +43,10 @@ func TestDrawOrder(t *testing.T) {
 
 func TestOrthogonal(t *testing.T) {
 	m := &tilemap.Map{Width: 10, Height: 5, TileWidth: 16, TileHeight: 8}
-	p := NewOrthogonal(m)
+	p := newOrthogonal(m)
 
-	if x, y := p.TileToScreen(tilemap.TilePos{Col: 3, Row: 2}); x != 48 || y != 16 {
-		t.Errorf("TileToScreen = %v,%v", x, y)
-	}
-	if got := p.ScreenToTile(47.9, 16); got != (tilemap.TilePos{Col: 2, Row: 2}) {
-		t.Errorf("ScreenToTile = %v", got)
-	}
-	if got := p.ScreenToTile(-0.5, -9); got != (tilemap.TilePos{Col: -1, Row: -2}) {
-		t.Errorf("ScreenToTile negative = %v", got)
-	}
-	if b := p.Bounds(m); b != image.Rect(0, 0, 160, 40) {
-		t.Errorf("Bounds = %v", b)
+	if x, y := p.tileToWorld(tilemap.TilePos{Col: 3, Row: 2}); x != 48 || y != 16 {
+		t.Errorf("tileToWorld = %v,%v", x, y)
 	}
 
 	cases := []struct {
@@ -68,9 +59,9 @@ func TestOrthogonal(t *testing.T) {
 		{image.Rect(-50, -50, 0, 0), 0, 0, -1, -1},
 	}
 	for _, tc := range cases {
-		c0, r0, c1, r1 := p.VisibleTiles(m, tc.view)
+		c0, r0, c1, r1 := p.visibleTiles(m, tc.view)
 		if c0 != tc.c0 || r0 != tc.r0 || c1 != tc.c1 || r1 != tc.r1 {
-			t.Errorf("VisibleTiles(%v) = %d,%d,%d,%d, want %d,%d,%d,%d", tc.view, c0, r0, c1, r1, tc.c0, tc.r0, tc.c1, tc.r1)
+			t.Errorf("visibleTiles(%v) = %d,%d,%d,%d, want %d,%d,%d,%d", tc.view, c0, r0, c1, r1, tc.c0, tc.r0, tc.c1, tc.r1)
 		}
 	}
 }
@@ -127,32 +118,19 @@ func TestOverdraw(t *testing.T) {
 
 func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 
-func TestTileAtScreen(t *testing.T) {
-	m := &tilemap.Map{Width: 10, Height: 5, TileWidth: 16, TileHeight: 16}
-	r := &MapRenderer{m: m, proj: NewOrthogonal(m)}
-	if got := r.TileAtScreen(20, 5, Camera{X: 15.6, Y: 0}); got != (tilemap.TilePos{Col: 2, Row: 0}) {
-		t.Errorf("TileAtScreen = %v", got)
-	}
-}
+func TestWorldScreen(t *testing.T) {
+	r := &MapRenderer{}
+	cam := Camera{X: 15.6, Y: -0.4}
 
-func TestInWorld(t *testing.T) {
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Scale(2, 2)
-	op.ColorScale.ScaleAlpha(0.5)
-
-	placed := inWorld(op, tilemap.Vector{X: 100, Y: 50}, Camera{X: 10.4, Y: 20.6})
-	if x, y := placed.GeoM.Apply(1, 1); x != 92 || y != 31 {
-		t.Errorf("tile pixel 1,1 at %v,%v, want 92,31: scaled first, then placed", x, y)
+	if x, y := r.WorldToScreen(tilemap.Vector{X: 100, Y: 50.5}, cam); x != 84 || y != 50.5 {
+		t.Errorf("WorldToScreen = %v,%v, want 84,50.5: camera rounded, position kept", x, y)
 	}
-	if placed.ColorScale.A() != 0.5 {
-		t.Errorf("alpha = %v, want 0.5", placed.ColorScale.A())
+	if got := r.ScreenToWorld(20, 5, cam); got != (tilemap.Vector{X: 36, Y: 5}) {
+		t.Errorf("ScreenToWorld = %v", got)
 	}
-	if x, _ := op.GeoM.Apply(1, 1); x != 2 {
-		t.Error("caller's options changed")
-	}
-	plain := inWorld(nil, tilemap.Vector{X: 3, Y: 4}, Camera{})
-	if x, y := plain.GeoM.Apply(0, 0); x != 3 || y != 4 {
-		t.Errorf("nil options: %v,%v", x, y)
+	world := tilemap.Vector{X: 7, Y: 9}
+	if x, y := r.WorldToScreen(world, cam); r.ScreenToWorld(int(x), int(y), cam) != world {
+		t.Error("ScreenToWorld does not invert WorldToScreen")
 	}
 }
 
