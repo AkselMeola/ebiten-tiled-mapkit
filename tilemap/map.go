@@ -51,7 +51,7 @@ type TileDef struct {
 }
 
 type Frame struct {
-	Tile     TileID
+	TileID   TileID
 	Duration time.Duration
 }
 
@@ -74,7 +74,7 @@ func (d *TileDef) FrameAt(t time.Duration) TileID {
 	}
 	total := d.AnimationDuration()
 	if total <= 0 {
-		return d.Animation[0].Tile
+		return d.Animation[0].TileID
 	}
 
 	t %= total
@@ -83,11 +83,11 @@ func (d *TileDef) FrameAt(t time.Duration) TileID {
 	}
 	for _, f := range d.Animation {
 		if t < f.Duration {
-			return f.Tile
+			return f.TileID
 		}
 		t -= f.Duration
 	}
-	return d.Animation[len(d.Animation)-1].Tile
+	return d.Animation[len(d.Animation)-1].TileID
 }
 
 // FrameAtOnce plays the animation once and holds the last frame; done reports it has finished.
@@ -97,10 +97,10 @@ func (d *TileDef) FrameAtOnce(t time.Duration) (id TileID, done bool) {
 		return 0, true
 	}
 	if t < 0 {
-		return d.Animation[0].Tile, false
+		return d.Animation[0].TileID, false
 	}
 	if t >= d.AnimationDuration() {
-		return d.Animation[len(d.Animation)-1].Tile, true
+		return d.Animation[len(d.Animation)-1].TileID, true
 	}
 	return d.FrameAt(t), false
 }

@@ -12,9 +12,9 @@ import (
 func TestFrameAt(t *testing.T) {
 	var def TileDef
 	def.SetAnimation([]Frame{
-		{Tile: 4, Duration: 200 * time.Millisecond},
-		{Tile: 5, Duration: 200 * time.Millisecond},
-		{Tile: 6, Duration: 200 * time.Millisecond},
+		{TileID: 4, Duration: 200 * time.Millisecond},
+		{TileID: 5, Duration: 200 * time.Millisecond},
+		{TileID: 6, Duration: 200 * time.Millisecond},
 	})
 
 	cases := map[time.Duration]TileID{
@@ -31,7 +31,7 @@ func TestFrameAt(t *testing.T) {
 }
 
 func TestFrameAtWithoutSetAnimation(t *testing.T) {
-	def := TileDef{Animation: []Frame{{Tile: 1, Duration: time.Second}, {Tile: 2, Duration: time.Second}}}
+	def := TileDef{Animation: []Frame{{TileID: 1, Duration: time.Second}, {TileID: 2, Duration: time.Second}}}
 	if got := def.FrameAt(1500 * time.Millisecond); got != 2 {
 		t.Errorf("FrameAt = %d, want 2", got)
 	}
@@ -110,7 +110,7 @@ func nearVec(a, b Vector) bool { return near(a.X, b.X) && near(a.Y, b.Y) }
 
 func TestFrameAtOnce(t *testing.T) {
 	var def TileDef
-	def.SetAnimation([]Frame{{Tile: 4, Duration: 100 * time.Millisecond}, {Tile: 5, Duration: 100 * time.Millisecond}})
+	def.SetAnimation([]Frame{{TileID: 4, Duration: 100 * time.Millisecond}, {TileID: 5, Duration: 100 * time.Millisecond}})
 
 	cases := []struct {
 		t    time.Duration

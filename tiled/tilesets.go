@@ -51,7 +51,7 @@ func (c *converter) loadTilesets() error {
 			if !ok {
 				return fmt.Errorf("animation of tile %d references unknown tile %d", a.tile, f.TileID)
 			}
-			frames[i] = tilemap.Frame{Tile: id, Duration: time.Duration(f.Duration) * time.Millisecond}
+			frames[i] = tilemap.Frame{TileID: id, Duration: time.Duration(f.Duration) * time.Millisecond}
 		}
 		c.m.Tiles[a.tile].SetAnimation(frames)
 	}
