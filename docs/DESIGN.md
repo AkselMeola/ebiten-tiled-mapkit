@@ -228,7 +228,8 @@ Implementation notes:
 - **Sub-image cache.** `SubImage` allocates; tile images are cached in a `[]*ebiten.Image` indexed by
   `TileID`, reset when a different map is drawn.
 - **Textures via `fs.FS`.** `FSTextures` loads and caches images, errors included. Adapters never
-  touch pixels, so they run headless in tests.
+  touch pixels, so they run headless in tests. `Images` names images and sheet regions outside the
+  map (UI) on top of a `TextureProvider`, sharing its cache; regions are checked against the image.
 - **Culling margins.** Tiles can extend outside their cell (larger than the grid, or offset). The
   renderer computes how far once per map and widens the view before calling `VisibleTiles`.
 - **Tile layer batching.** One `DrawTriangles32` call per run of tiles sharing a tileset image,
