@@ -3,6 +3,7 @@ package tilemap
 
 import (
 	"image"
+	"iter"
 	"time"
 )
 
@@ -132,6 +133,41 @@ func (m *Map) Tile(id TileID) *TileDef {
 // Layer finds a layer by name, depth-first through groups.
 func (m *Map) Layer(name string) Layer {
 	return findLayer(m.Layers, name)
+}
+
+// AllLayers yields every layer depth-first, each group before its children.
+func (m *Map) AllLayers() iter.Seq[Layer] {
+	return func(yield func(Layer) bool) {
+		walkLayers(m.Layers, yield)
+	}
+}
+
+func walkLayers(layers []Layer, yield func(Layer) bool) bool {
+	for _, l := range layers {
+		if !yield(l) {
+			return false
+		}
+		if g, ok := l.(*GroupLayer); ok && !walkLayers(g.Layers, yield) {
+			return false
+		}
+	}
+	return true
+}
+
+// Objects yields every object of every object layer, in layer order. Changes through the pointer
+// stick, such as hiding a spawned object.
+func (m *Map) Objects() iter.Seq[*MapObject] {
+	return func(yield func(*MapObject) bool) {
+		for l := range m.AllLayers() {
+			if l, ok := l.(*ObjectLayer); ok {
+				for i := range l.Objects {
+					if !yield(&l.Objects[i]) {
+						return
+					}
+				}
+			}
+		}
+	}
 }
 
 func findLayer(layers []Layer, name string) Layer {

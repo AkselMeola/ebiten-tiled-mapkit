@@ -51,7 +51,6 @@ type Game struct {
 	groundLayer *tilemap.TileLayer
 	objectLayer *tilemap.ObjectLayer
 	renderer    *render.MapRenderer
-	animator    *render.Animator
 
 	player         Player
 	coinCount      int
@@ -59,41 +58,52 @@ type Game struct {
 }
 
 func main() {
-	tileMap, err := tiled.Load(assets, "assets/coins.tmx")
-	if err != nil {
+	// Textures live as long as the game. Every level (and UI image) loads through them, so each
+	// image file is decoded only once.
+	textures := render.NewFSTextures(assets)
+
+	game := &Game{}
+	if err := game.startLevel(textures, "assets/coins.tmx"); err != nil {
 		log.Fatal(err)
 	}
-
-	game := &Game{
-		tileMap:     tileMap,
-		groundLayer: tileMap.Layer("ground").(*tilemap.TileLayer),
-		objectLayer: tileMap.Layer("objects").(*tilemap.ObjectLayer),
-		animator:    &render.Animator{},
-	}
-
-	// The renderer draws the map. The animator's clock drives the animated tiles (water, coins).
-	game.renderer = render.NewMapRenderer(render.NewOrthogonal(tileMap), render.NewFSTextures(assets), game.animator)
-	// AfterLayer runs after each map layer is drawn; we use it to draw the player between layers.
-	game.renderer.AfterLayer = game.drawPlayer
-	// Preload loads every tileset image now, so a missing file fails at startup, not mid-game.
-	if err := game.renderer.Preload(tileMap); err != nil {
-		log.Fatal(err)
-	}
-
-	game.spawnFromObjects()
 
 	ebiten.SetWindowTitle("mapkit example: coins")
-	ebiten.SetWindowSize(tileMap.Width*tileMap.TileWidth*windowScale, tileMap.Height*tileMap.TileHeight*windowScale)
+	ebiten.SetWindowSize(game.tileMap.Width*game.tileMap.TileWidth*windowScale, game.tileMap.Height*game.tileMap.TileHeight*windowScale)
 	if err := ebiten.RunGame(game); err != nil {
 		log.Fatal(err)
 	}
 }
 
+// startLevel loads a map and everything that belongs to it. Switching levels is calling it again.
+func (g *Game) startLevel(textures render.TextureProvider, path string) error {
+	tileMap, err := tiled.Load(assets, path)
+	if err != nil {
+		return err
+	}
+
+	// The renderer draws this one map. It loads the map's images now, so a missing file fails
+	// here, not mid-game. Its clock drives the animated tiles (water, coins).
+	renderer, err := render.NewMapRenderer(textures, tileMap)
+	if err != nil {
+		return err
+	}
+	// AfterLayer runs after each map layer is drawn; we use it to draw the player between layers.
+	renderer.AfterLayer = g.drawPlayer
+
+	*g = Game{
+		tileMap:     tileMap,
+		groundLayer: tileMap.Layer("ground").(*tilemap.TileLayer),
+		objectLayer: tileMap.Layer("objects").(*tilemap.ObjectLayer),
+		renderer:    renderer,
+	}
+	g.spawnFromObjects()
+	return nil
+}
+
 // spawnFromObjects reads the objects placed in Tiled. Objects are only descriptions: the game
 // decides what each one becomes.
 func (g *Game) spawnFromObjects() {
-	for i := range g.objectLayer.Objects {
-		object := &g.objectLayer.Objects[i]
+	for object := range g.tileMap.Objects() {
 		switch object.Type {
 		case "Player":
 			// The player becomes a game entity. Hide the map object so it isn't drawn twice.
@@ -107,8 +117,8 @@ func (g *Game) spawnFromObjects() {
 }
 
 func (g *Game) Update() error {
-	// Advance the shared clock by one tick. All map animations are computed from it.
-	g.animator.Update(render.Tick())
+	// Advance the map's animation clock by one tick.
+	g.renderer.Update()
 
 	player := &g.player
 
@@ -187,7 +197,7 @@ func (g *Game) collectCoins() {
 func (g *Game) Draw(screen *ebiten.Image) {
 	// Draws every layer in order; the player is drawn in between by drawPlayer.
 	// The camera stays at the origin because the whole map fits in the window.
-	g.renderer.Draw(screen, g.tileMap, render.Camera{})
+	g.renderer.Draw(screen, render.Camera{})
 
 	status := fmt.Sprintf("coins %d/%d", g.collectedCount, g.coinCount)
 	if g.collectedCount == g.coinCount {
@@ -205,7 +215,7 @@ func (g *Game) drawPlayer(screen *ebiten.Image, layer tilemap.Layer, camera rend
 	player := &g.player
 
 	// The time picks the animation frame: the map clock while walking, frame one when standing.
-	animationTime := g.animator.Clock
+	animationTime := g.renderer.Clock()
 	if !player.isWalking() {
 		animationTime = 0
 	}
@@ -213,7 +223,7 @@ func (g *Game) drawPlayer(screen *ebiten.Image, layer tilemap.Layer, camera rend
 	options := &ebiten.DrawImageOptions{}
 	options.GeoM.Translate(player.position.X-camera.X, player.position.Y-camera.Y)
 	// DrawTile draws a map tile for the game's own entity, with flips and animation applied.
-	g.renderer.DrawTile(screen, g.tileMap, tilemap.Cell{Tile: player.tile, Flip: player.flip}, animationTime, options)
+	g.renderer.DrawTile(screen, tilemap.Cell{Tile: player.tile, Flip: player.flip}, animationTime, options)
 }
 
 // Layout makes the game's screen exactly the map's size; Ebiten scales it up to the window.

@@ -53,35 +53,34 @@ var assets embed.FS
 
 type game struct {
 	m        *tilemap.Map
-	anim     *render.Animator
 	renderer *render.MapRenderer
 	cam      render.Camera
 }
 
 func main() {
+	textures := render.NewFSTextures(assets) // for the whole game: maps and UI images
+
 	m, err := tiled.Load(assets, "maps/level1.tmx")
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	anim := &render.Animator{}
-	r := render.NewMapRenderer(render.NewOrthogonal(m), render.NewFSTextures(assets), anim)
-	if err := r.Preload(m); err != nil { // optional: fail early on missing images
+	r, err := render.NewMapRenderer(textures, m) // loads the map's images, reports missing ones
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	if err := ebiten.RunGame(&game{m: m, anim: anim, renderer: r}); err != nil {
+	if err := ebiten.RunGame(&game{m: m, renderer: r}); err != nil {
 		log.Fatal(err)
 	}
 }
 
 func (g *game) Update() error {
-	g.anim.Update(render.Tick())
+	g.renderer.Update() // advances tile animations
 	return nil
 }
 
 func (g *game) Draw(screen *ebiten.Image) {
-	g.renderer.Draw(screen, g.m, g.cam)
+	g.renderer.Draw(screen, g.cam)
 }
 
 func (g *game) Layout(w, h int) (int, int) { return w, h }
@@ -89,6 +88,14 @@ func (g *game) Layout(w, h int) (int, int) { return w, h }
 
 Image and tileset paths in the map are resolved relative to the map file, inside the same `fs.FS`.
 Embed everything the map references.
+
+### Lifetimes
+
+- **Textures** (`FSTextures`) live as long as the game. Create them at startup; UI images
+  (`render.Images`) load through them too.
+- **A map and its renderer** live as long as the level. A renderer draws one map; for another
+  level, load the map and create a new renderer with the same textures. Images already loaded
+  are reused, so that is cheap.
 
 ## Example
 
@@ -117,7 +124,7 @@ func blocked(col, row int) bool {
 }
 ```
 
-`Projection.ScreenToTile` and `TileToScreen` convert between pixels and cells.
+`renderer.Projection()` converts between pixels and cells with `ScreenToTile` and `TileToScreen`.
 
 ### Objects
 
@@ -125,8 +132,7 @@ Object layers hold `MapObject`s: spawn points, triggers, items. They are descrip
 creates its own entities from them.
 
 ```go
-for i := range objects.Objects {
-	o := &objects.Objects[i]
+for o := range m.Objects() { // every object layer, groups included
 	switch o.Type {
 	case "Player":
 		player = newPlayer(o.Pos)
@@ -179,15 +185,15 @@ r.AfterLayer = func(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
 	op := &ebiten.DrawImageOptions{}
 	op.GeoM.Rotate(player.angle)
 	op.GeoM.Translate(player.pos.X-cam.X, player.pos.Y-cam.Y)
-	r.DrawTile(dst, m, tilemap.Cell{Tile: player.tile, Flip: player.flip}, anim.Clock-player.animStart, op)
+	r.DrawTile(dst, tilemap.Cell{Tile: player.tile, Flip: player.flip}, r.Clock()-player.animStart, op)
 }
 ```
 
 - `AfterLayer` runs after every layer, visible or not, in draw order.
 - `DrawTile` applies the cell's flips and the tile offset, then your `op`. The tile's top-left
   corner is at the origin of `op.GeoM`.
-- The time argument picks the animation frame. `anim.Clock` keeps the tile in sync with the map,
-  and `anim.Clock - start` plays the animation from its first frame since `start`. Restarting,
+- The time argument picks the animation frame. `r.Clock()` keeps the tile in sync with the map,
+  and `r.Clock() - start` plays the animation from its first frame since `start`. Restarting,
   pausing or changing speed is just changing that number.
 
 For play-once animations (a door opening, a box landing), use `TileDef.FrameAtOnce(t)`, which holds
@@ -198,12 +204,11 @@ To switch animation by state or direction, give each animated tile properties in
 
 ## Other images
 
-`render.Images` holds named images outside the map, such as UI graphics, loaded from the same
-`fs.FS`. Pass it the renderer's `FSTextures` so images used by both are loaded once.
+`render.Images` holds named images outside the map, such as UI graphics. It needs no map: create
+it at startup with the game's textures, so images used by both are loaded once.
 
 ```go
 textures := render.NewFSTextures(assets)
-r := render.NewMapRenderer(render.NewOrthogonal(m), textures, anim)
 
 ui := render.NewImages(textures).
 	Add("button", "images/ui/button.png").
@@ -232,7 +237,7 @@ image and scale that.
 |---|---|
 | `tilemap` | Data model: `Map`, `TileDef`, layers, `MapObject`, `Properties`. No Ebiten or Tiled imports. |
 | `tiled` | `Load(fsys, path)`: Tiled `.tmx` → `tilemap.Map`. |
-| `render` | `MapRenderer`, `Projection` (`Orthogonal`), `FSTextures`, `Images`, `Animator`. |
+| `render` | `MapRenderer`, `Projection` (`Orthogonal`), `FSTextures`, `Images`. |
 
 ## Tiled support
 

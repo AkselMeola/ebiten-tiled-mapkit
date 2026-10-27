@@ -7,7 +7,7 @@ renderer draws with Ebiten through a swappable projection.
 Tiled adapter ─┐
 (Text adapter) ┴─► tilemap.Map (pure data) ─► render.MapRenderer (Ebiten)
                                                 ├─ Projection (orthogonal; isometric later)
-                                                ├─ Animator (shared clock)
+                                                ├─ animation clock
                                                 └─ TextureProvider
 ```
 
@@ -23,7 +23,7 @@ Tiled adapter ─┐
 ```
 tilemap/   domain model; no Ebiten, no Tiled imports
 tiled/     adapter: .tmx -> tilemap.Map
-render/    Ebiten renderer, projections, textures, animator
+render/    Ebiten renderer, projections, textures, named images
 examples/  example games
 ```
 
@@ -169,17 +169,13 @@ Tiled, and advancing animation costs one clock increment per tick.
 | 500ms | 500 | 6 |
 | 650ms | 50 | 4 |
 
-```go
-type Animator struct{ Clock time.Duration }
-func (a *Animator) Update(dt time.Duration)
-```
-
-Call `Update(render.Tick())` from Ebiten's `Update`, never wall-clock time in `Draw`, so animation is
-deterministic.
+The clock is the renderer's: `MapRenderer.Update()` adds `render.Tick()` and `Clock()` reads it.
+Call `Update` from Ebiten's `Update`, never wall-clock time in `Draw`, so animation is
+deterministic. A new level gets a new renderer, so its clock starts at zero.
 
 **Per-entity animation** needs no extra machinery: an entity stores when its current animation
 started and passes `clock - start` as the time. That restarts, desyncs, slows down (`* speed`) or
-pauses an animation. This replaced the per-object `Player` map once planned on the `Animator`: the
+pauses an animation. This replaced a per-object player map once planned on a shared animator: the
 state lives on the game entity, which outlives the object it was spawned from.
 
 ## Renderer (`render`)
@@ -197,17 +193,24 @@ type TextureProvider interface {
 }
 
 type MapRenderer struct {
-    Proj       Projection
-    Textures   TextureProvider
-    Anim       *Animator
     AfterLayer LayerHook // runs after every layer, visible or not
+    // map, projection, textures, clock and caches are private
 }
 
-func (r *MapRenderer) Draw(dst *ebiten.Image, m *tilemap.Map, cam Camera)
-func (r *MapRenderer) DrawTile(dst *ebiten.Image, m *tilemap.Map, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions)
-func (r *MapRenderer) Preload(m *tilemap.Map) error
-func (r *MapRenderer) Err() error
+func NewMapRenderer(textures TextureProvider, m *tilemap.Map) (*MapRenderer, error)
+func (r *MapRenderer) Update()
+func (r *MapRenderer) Clock() time.Duration
+func (r *MapRenderer) Projection() Projection
+func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera)
+func (r *MapRenderer) DrawTile(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions)
 ```
+
+**One renderer per map.** The constructor picks the projection from `Map.Orientation` (orthogonal,
+or unknown for hand-built maps; others are an error until implemented), loads every tile and image
+layer image and returns all errors, and cuts the tile sub-images. Nothing can go stale: there is no
+`SetMap`, and a renderer is never half set up. Switching levels means a new renderer; decoded
+images live in the `TextureProvider`, which the game keeps for its whole run and shares with
+`Images`.
 
 Draw walks `Map.Layers` in order with a type switch, skipping invisible layers and accumulating
 group offsets and opacity. The camera is rounded to whole pixels first, and `AfterLayer` gets
@@ -226,7 +229,7 @@ they interleave with map layers.
 Implementation notes:
 
 - **Sub-image cache.** `SubImage` allocates; tile images are cached in a `[]*ebiten.Image` indexed by
-  `TileID`, reset when a different map is drawn.
+  `TileID`, built by the constructor.
 - **Textures via `fs.FS`.** `FSTextures` loads and caches images, errors included. Adapters never
   touch pixels, so they run headless in tests. `Images` names images and sheet regions outside the
   map (UI) on top of a `TextureProvider`, sharing its cache; regions are checked against the image.
@@ -246,8 +249,9 @@ Implementation notes:
 
 ## Load and run lifecycle
 
-Load once: adapter → `tilemap.Map`; create `Animator` and `MapRenderer`; optionally `Preload`.
-Per frame: `anim.Update(render.Tick())` in `Update`, `renderer.Draw(screen, m, cam)` in `Draw`.
+At startup: `FSTextures`, and `Images` for UI graphics.
+Per level: adapter → `tilemap.Map`, then `NewMapRenderer(textures, m)`.
+Per frame: `renderer.Update()` in `Update`, `renderer.Draw(screen, cam)` in `Draw`.
 
 ## Roadmap
 

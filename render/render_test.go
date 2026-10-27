@@ -1,10 +1,14 @@
 package render
 
 import (
+	"bytes"
 	"image"
+	"image/png"
 	"math"
 	"slices"
+	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -122,3 +126,34 @@ func TestOverdraw(t *testing.T) {
 }
 
 func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
+
+func TestNewMapRenderer(t *testing.T) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 32, 16))); err != nil {
+		t.Fatal(err)
+	}
+	fsys := fstest.MapFS{"tiles.png": {Data: buf.Bytes()}}
+	tile := func(src image.Rectangle) tilemap.TileDef { return tilemap.TileDef{Image: "tiles.png", Src: src} }
+	m := &tilemap.Map{Width: 2, Height: 1, TileWidth: 16, TileHeight: 16, Tiles: []tilemap.TileDef{
+		{}, tile(image.Rect(0, 0, 16, 16)), tile(image.Rect(16, 0, 32, 16)),
+	}}
+
+	r, err := NewMapRenderer(NewFSTextures(fsys), m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.tiles[2].Bounds(); got != image.Rect(16, 0, 32, 16) {
+		t.Errorf("tile 2 bounds = %v", got)
+	}
+
+	m.Layers = []tilemap.Layer{&tilemap.GroupLayer{Layers: []tilemap.Layer{&tilemap.ImageLayer{Image: "sky.png"}}}}
+	if _, err := NewMapRenderer(NewFSTextures(fsys), m); err == nil || !strings.Contains(err.Error(), "sky.png") {
+		t.Errorf("error = %v, want one naming sky.png", err)
+	}
+
+	m.Layers = nil
+	m.Orientation = tilemap.OrientationIsometric
+	if _, err := NewMapRenderer(NewFSTextures(fsys), m); err == nil {
+		t.Error("isometric map: no error")
+	}
+}

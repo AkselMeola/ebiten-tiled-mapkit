@@ -2,6 +2,8 @@ package tilemap
 
 import (
 	"math"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -129,5 +131,39 @@ func TestFrameAtOnce(t *testing.T) {
 	var static TileDef
 	if id, done := static.FrameAtOnce(time.Second); id != 0 || !done {
 		t.Errorf("static FrameAtOnce = %d,%v", id, done)
+	}
+}
+
+func TestObjects(t *testing.T) {
+	m := &Map{Layers: []Layer{
+		&ObjectLayer{LayerBase: LayerBase{Name: "a"}, Objects: []MapObject{{ID: 1}, {ID: 2}}},
+		&TileLayer{LayerBase: LayerBase{Name: "ground"}},
+		&GroupLayer{LayerBase: LayerBase{Name: "g"}, Layers: []Layer{
+			&ObjectLayer{LayerBase: LayerBase{Name: "b"}, Objects: []MapObject{{ID: 3}}},
+		}},
+	}}
+
+	var names []string
+	for l := range m.AllLayers() {
+		names = append(names, l.Base().Name)
+	}
+	if got := strings.Join(names, ","); got != "a,ground,g,b" {
+		t.Errorf("AllLayers = %s", got)
+	}
+
+	var ids []int
+	for o := range m.Objects() {
+		ids = append(ids, o.ID)
+		o.Visible = true
+	}
+	if !slices.Equal(ids, []int{1, 2, 3}) {
+		t.Errorf("Objects = %v", ids)
+	}
+	if !m.Layer("b").(*ObjectLayer).Objects[0].Visible {
+		t.Error("change through Objects did not stick")
+	}
+
+	for range m.Objects() {
+		break
 	}
 }

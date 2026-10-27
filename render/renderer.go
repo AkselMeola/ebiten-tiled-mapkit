@@ -3,6 +3,7 @@ package render
 import (
 	"cmp"
 	"errors"
+	"fmt"
 	"image"
 	"math"
 	"slices"
@@ -20,49 +21,79 @@ type Camera struct {
 // LayerHook runs after every layer, visible or not, so the game can draw its entities in between.
 type LayerHook func(dst *ebiten.Image, l tilemap.Layer, cam Camera)
 
+// MapRenderer draws one map. Create one per map: images are shared through the TextureProvider,
+// so a new renderer only cuts tiles from images already loaded.
 type MapRenderer struct {
-	Proj       Projection
-	Textures   TextureProvider
-	Anim       *Animator
 	AfterLayer LayerHook
 
 	m        *tilemap.Map
+	proj     Projection
+	textures TextureProvider
+	clock    time.Duration
 	tiles    []*ebiten.Image
-	textures []*ebiten.Image
-	tried    []bool
+	parents  []*ebiten.Image
 	overdraw image.Rectangle
 	order    []drawItem
 	vertices []ebiten.Vertex
 	indices  []uint32
-	err      error
 }
 
-func NewMapRenderer(proj Projection, textures TextureProvider, anim *Animator) *MapRenderer {
-	return &MapRenderer{Proj: proj, Textures: textures, Anim: anim}
-}
-
-// Err returns the texture errors met while drawing.
-func (r *MapRenderer) Err() error {
-	return r.err
-}
-
-// Preload loads every tile texture of m up front.
-func (r *MapRenderer) Preload(m *tilemap.Map) error {
-	r.prepare(m)
+// NewMapRenderer loads every image m uses and returns all load errors.
+func NewMapRenderer(textures TextureProvider, m *tilemap.Map) (*MapRenderer, error) {
+	if m.Orientation != tilemap.OrientationOrthogonal && m.Orientation != tilemap.OrientationUnknown {
+		return nil, fmt.Errorf("render: only orthogonal maps are supported, got orientation %d", m.Orientation)
+	}
+	r := &MapRenderer{
+		m:        m,
+		proj:     NewOrthogonal(m),
+		textures: textures,
+		tiles:    make([]*ebiten.Image, len(m.Tiles)),
+		parents:  make([]*ebiten.Image, len(m.Tiles)),
+		overdraw: overdraw(m),
+	}
 	var errs []error
 	for id := 1; id < len(m.Tiles); id++ {
-		if _, err := r.loadTile(tilemap.TileID(id)); err != nil {
+		if err := r.loadTile(tilemap.TileID(id)); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	return errors.Join(errs...)
+	for l := range m.AllLayers() {
+		if l, ok := l.(*tilemap.ImageLayer); ok && l.Image != "" {
+			if _, err := textures.Texture(l.Image); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// Update advances the animation clock by one tick. Call it from ebiten's Update.
+func (r *MapRenderer) Update() {
+	r.clock += Tick()
+}
+
+// Clock is the animation time, the sum of all Update ticks.
+func (r *MapRenderer) Clock() time.Duration {
+	return r.clock
+}
+
+// Projection converts between tile and screen positions for this map.
+func (r *MapRenderer) Projection() Projection {
+	return r.proj
+}
+
+// Tick is the fixed duration of one ebiten update.
+func Tick() time.Duration {
+	return time.Second / time.Duration(ebiten.TPS())
 }
 
 // Draw draws the map with the camera rounded to whole pixels; AfterLayer receives the rounded camera.
-func (r *MapRenderer) Draw(dst *ebiten.Image, m *tilemap.Map, cam Camera) {
-	r.prepare(m)
+func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera) {
 	cam = Camera{X: math.Round(cam.X), Y: math.Round(cam.Y)}
-	r.drawLayers(dst, m.Layers, cam, 0, 0, 1)
+	r.drawLayers(dst, r.m.Layers, cam, 0, 0, 1)
 }
 
 func (r *MapRenderer) drawLayers(dst *ebiten.Image, layers []tilemap.Layer, cam Camera, ox, oy, alpha float64) {
@@ -95,10 +126,10 @@ func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam
 		minX+b.Dx()+r.overdraw.Min.X, minY+b.Dy()+r.overdraw.Min.Y,
 	)
 
-	c0, r0, c1, r1 := r.Proj.VisibleTiles(r.m, view)
+	c0, r0, c1, r1 := r.proj.VisibleTiles(r.m, view)
 	c1, r1 = min(c1, l.W-1), min(r1, l.H-1)
 	th := float64(r.m.TileHeight)
-	t := r.clock()
+	t := r.clock
 
 	// Tiles are batched into one DrawTriangles call per run of tiles sharing a texture.
 	var batch *ebiten.Image
@@ -112,14 +143,14 @@ func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam
 			if img == nil {
 				continue
 			}
-			if tex := r.textures[id]; tex != batch {
+			if tex := r.parents[id]; tex != batch {
 				r.flush(dst, batch)
 				batch = tex
 			}
 			def := &r.m.Tiles[id]
 			src := img.Bounds()
 			_, h := flippedSize(cell.Flip, src)
-			x, y := r.Proj.TileToScreen(col, row)
+			x, y := r.proj.TileToScreen(col, row)
 			r.appendQuad(
 				x+float64(def.Offset.X)+ox-cam.X,
 				y+th-h+float64(def.Offset.Y)+oy-cam.Y,
@@ -188,7 +219,7 @@ func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer,
 	r.order = drawOrder(l, r.order)
 	for _, item := range r.order {
 		o := &l.Objects[item.index]
-		id, img := r.frame(o.Tile.Tile, r.clock())
+		id, img := r.frame(o.Tile.Tile, r.clock)
 		if img == nil {
 			continue
 		}
@@ -207,8 +238,7 @@ func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer,
 
 // DrawTile draws cell's tile at animation time t, with its top-left corner at the origin of op.GeoM.
 // Flips and the tile offset are applied before op; op may be nil.
-func (r *MapRenderer) DrawTile(dst *ebiten.Image, m *tilemap.Map, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions) {
-	r.prepare(m)
+func (r *MapRenderer) DrawTile(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions) {
 	id, img := r.frame(cell.Tile, t)
 	if img == nil {
 		return
@@ -216,7 +246,7 @@ func (r *MapRenderer) DrawTile(dst *ebiten.Image, m *tilemap.Map, cell tilemap.C
 	if op == nil {
 		op = &ebiten.DrawImageOptions{}
 	}
-	r.drawTile(dst, img, &m.Tiles[id], cell.Flip, op)
+	r.drawTile(dst, img, &r.m.Tiles[id], cell.Flip, op)
 }
 
 func (r *MapRenderer) drawTile(dst, img *ebiten.Image, def *tilemap.TileDef, flip tilemap.Flip, op *ebiten.DrawImageOptions) {
@@ -232,9 +262,8 @@ func (r *MapRenderer) drawImageLayer(dst *ebiten.Image, l *tilemap.ImageLayer, c
 	if l.Image == "" {
 		return
 	}
-	img, err := r.Textures.Texture(l.Image)
+	img, err := r.textures.Texture(l.Image)
 	if err != nil {
-		r.setErr(err)
 		return
 	}
 	op := &ebiten.DrawImageOptions{}
@@ -243,70 +272,35 @@ func (r *MapRenderer) drawImageLayer(dst *ebiten.Image, l *tilemap.ImageLayer, c
 	dst.DrawImage(img, op)
 }
 
-func (r *MapRenderer) clock() time.Duration {
-	if r.Anim == nil {
-		return 0
-	}
-	return r.Anim.Clock
-}
-
-// frame resolves the animation at t and returns the tile to draw with its cached image.
+// frame resolves the animation at t and returns the tile to draw with its image.
 func (r *MapRenderer) frame(id tilemap.TileID, t time.Duration) (tilemap.TileID, *ebiten.Image) {
-	if id == 0 || int(id) >= len(r.m.Tiles) {
+	if id == 0 || int(id) >= len(r.tiles) {
 		return id, nil
 	}
 	if def := &r.m.Tiles[id]; def.Animation != nil {
-		if f := def.FrameAt(t); f != 0 && int(f) < len(r.m.Tiles) {
+		if f := def.FrameAt(t); f != 0 && int(f) < len(r.tiles) {
 			id = f
 		}
 	}
-	img, err := r.loadTile(id)
-	if err != nil {
-		r.setErr(err)
-	}
-	return id, img
+	return id, r.tiles[id]
 }
 
-func (r *MapRenderer) loadTile(id tilemap.TileID) (*ebiten.Image, error) {
-	if r.tried[id] {
-		return r.tiles[id], nil
-	}
-	r.tried[id] = true
-
+func (r *MapRenderer) loadTile(id tilemap.TileID) error {
 	def := &r.m.Tiles[id]
 	if def.Image == "" {
-		return nil, nil
+		return nil
 	}
-	tex, err := r.Textures.Texture(def.Image)
+	tex, err := r.textures.Texture(def.Image)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	r.textures[id] = tex
+	r.parents[id] = tex
 	if def.Src.Empty() {
 		r.tiles[id] = tex
 	} else {
 		r.tiles[id] = tex.SubImage(def.Src).(*ebiten.Image)
 	}
-	return r.tiles[id], nil
-}
-
-func (r *MapRenderer) setErr(err error) {
-	if r.err == nil {
-		r.err = err
-	}
-}
-
-// prepare resets the per-map caches when a different map is drawn.
-func (r *MapRenderer) prepare(m *tilemap.Map) {
-	if r.m == m && len(r.tiles) == len(m.Tiles) {
-		return
-	}
-	r.m = m
-	r.tiles = make([]*ebiten.Image, len(m.Tiles))
-	r.textures = make([]*ebiten.Image, len(m.Tiles))
-	r.tried = make([]bool, len(m.Tiles))
-	r.err = nil
-	r.overdraw = overdraw(m)
+	return nil
 }
 
 // overdraw is how far tiles reach outside their cell: Min is left/top, Max is right/bottom.

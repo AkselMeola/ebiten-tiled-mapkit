@@ -40,11 +40,13 @@ func benchMap() *tilemap.Map {
 // measure Draw alone. Run with -bench; it needs a display.
 func BenchmarkDrawFullHD(b *testing.B) {
 	m := benchMap()
-	anim := &Animator{}
 	var r *MapRenderer
 	var dst *ebiten.Image
 	inFrame(func() {
-		r = NewMapRenderer(NewOrthogonal(m), memTextures{ebiten.NewImage(256, 256)}, anim)
+		var err error
+		if r, err = NewMapRenderer(memTextures{ebiten.NewImage(256, 256)}, m); err != nil {
+			b.Fatal(err)
+		}
 		dst = ebiten.NewImage(1920, 1080)
 	})
 	cam := Camera{X: 500, Y: 500}
@@ -54,10 +56,10 @@ func BenchmarkDrawFullHD(b *testing.B) {
 	var before, after runtime.MemStats
 	for b.Loop() {
 		inFrame(func() {
-			anim.Update(Tick())
+			r.Update()
 			runtime.ReadMemStats(&before)
 			start := time.Now()
-			r.Draw(dst, m, cam)
+			r.Draw(dst, cam)
 			drawTime += time.Since(start)
 			runtime.ReadMemStats(&after)
 			drawAllocs += after.Mallocs - before.Mallocs
