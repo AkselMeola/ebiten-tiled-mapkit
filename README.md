@@ -175,12 +175,13 @@ Map conversions work without a renderer, so game logic and tests only need the m
 ### Objects
 
 Object layers hold `MapObject`s: spawn points, triggers, items. They are descriptors; your game
-creates its own entities from them. A tile object without its own class takes its tile's class,
+creates its own entities from them. `Class` is the object's *Class* in Tiled (saved as `type` in
+the .tmx file). A tile object without its own class takes its tile's class,
 and its tile's properties under its own, as Tiled shows them.
 
 ```go
 for o := range m.Objects() { // every object layer, groups included
-	switch o.Type {
+	switch o.Class {
 	case "Player":
 		player = newPlayer(o.Pos)
 		o.Visible = false // the game draws the player from now on
@@ -205,7 +206,7 @@ visible objects covering a tile, for example to select one with the mouse:
 ```go
 x, y := ebiten.CursorPosition()
 for o := range m.ObjectsAt(m.WorldToTile(renderer.ScreenToWorld(x, y, cam))) {
-	if o.Type == "Door" { ... }
+	if o.Class == "Door" { ... }
 }
 ```
 
@@ -230,9 +231,11 @@ Custom properties keep their Tiled types:
 | color | `color.RGBA` | `Props.Color` |
 | file | `tilemap.FilePath` | `Props.String` |
 | object | `tilemap.ObjectRef` | `Props.Int` |
-| class | `tilemap.Properties` | `Props.Class` |
+| class | `tilemap.Properties` | `Props.Nested` |
 
-Maps, layers, tiles and objects all have `Props`.
+Maps, layers, tiles and objects all have `Props`. Getters return the zero value for a missing
+property. File paths are resolved like images, to paths within the map's file system, so they can
+be opened from it directly. An object property holds the target's ID: `m.Object(o.Props.Int("target"))`.
 
 ## Drawing your own entities
 
@@ -265,8 +268,9 @@ r.AfterLayer = func(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
   and `r.Clock() - start` plays the animation from its first frame since `start`. Restarting,
   pausing or changing speed is just changing that number.
 
-For play-once animations (a door opening, a box landing), use `TileDef.FrameAtOnce(t)`, which holds
-the last frame and reports when it's done.
+`m.Frame(id, t)` is the tile an animated tile shows at time `t`, or `id` itself when it isn't
+animated, for example to read a property of the current frame. For play-once animations (a door
+opening, a box landing), `m.FrameOnce(id, t)` holds the last frame and reports when it's done.
 
 To switch animation by state or direction, give each animated tile properties in Tiled
 (`state=walk`, `dir=left`) and build a lookup from `Map.Tiles` after loading.

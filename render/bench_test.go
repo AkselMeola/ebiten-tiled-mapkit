@@ -23,14 +23,14 @@ func benchMap() *tilemap.Map {
 		x, y := i%cols*tile, i/cols*tile
 		m.Tiles = append(m.Tiles, tilemap.TileDef{Image: "t", Src: image.Rect(x, y, x+tile, y+tile)})
 	}
-	m.Tiles[1].SetAnimation([]tilemap.Frame{{TileID: 1, Duration: 100 * time.Millisecond}, {TileID: 2, Duration: 100 * time.Millisecond}})
+	m.Tiles[1].Animation = []tilemap.Frame{{TileID: 1, Duration: 100 * time.Millisecond}, {TileID: 2, Duration: 100 * time.Millisecond}}
 
 	for layer := range 3 {
 		cells := make([]tilemap.Cell, size*size)
 		for i := range cells {
 			cells[i] = tilemap.Cell{TileID: tilemap.TileID(1 + (i*7+layer)%(cols*cols))}
 		}
-		m.Layers = append(m.Layers, &tilemap.TileLayer{LayerBase: tilemap.LayerBase{Visible: true, Opacity: 1}, W: size, H: size, Cells: cells})
+		m.Layers = append(m.Layers, &tilemap.TileLayer{LayerBase: tilemap.LayerBase{Visible: true, Opacity: 1}, Width: size, Height: size, Cells: cells})
 	}
 	return m
 }

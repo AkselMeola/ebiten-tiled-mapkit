@@ -53,7 +53,7 @@ func Load(fsys fs.FS, name string) (*tilemap.Map, error) {
 		Tiles:       []tilemap.TileDef{{}},
 	}
 	if tm.Properties != nil {
-		m.Props = convertProps(*tm.Properties)
+		m.Props = convertProps(*tm.Properties, tm.GetFileFullPath(""))
 	}
 
 	c := &converter{

@@ -59,7 +59,7 @@ func (c *converter) layers(
 				return nil, err
 			}
 			out = append(out, &tilemap.GroupLayer{
-				LayerBase: layerBase(g.Name, g.Class, g.Visible, g.Opacity, g.OffsetX, g.OffsetY, g.Properties),
+				LayerBase: c.layerBase(g.Name, g.Class, g.Visible, g.Opacity, g.OffsetX, g.OffsetY, g.Properties),
 				Layers:    children,
 			})
 			gi++
@@ -72,7 +72,7 @@ func (c *converter) layers(
 	return out, nil
 }
 
-func layerBase(name, class string, visible bool, opacity float32, offX, offY float64, props gotiled.Properties) tilemap.LayerBase {
+func (c *converter) layerBase(name, class string, visible bool, opacity float32, offX, offY float64, props gotiled.Properties) tilemap.LayerBase {
 	return tilemap.LayerBase{
 		Name:    name,
 		Class:   class,
@@ -80,15 +80,15 @@ func layerBase(name, class string, visible bool, opacity float32, offX, offY flo
 		Opacity: float64(opacity),
 		OffsetX: offX,
 		OffsetY: offY,
-		Props:   convertProps(props),
+		Props:   convertProps(props, c.tm.GetFileFullPath("")),
 	}
 }
 
 func (c *converter) tileLayer(l *gotiled.Layer) (*tilemap.TileLayer, error) {
 	out := &tilemap.TileLayer{
-		LayerBase: layerBase(l.Name, l.Class, l.Visible, l.Opacity, l.OffsetX, l.OffsetY, l.Properties),
-		W:         c.tm.Width,
-		H:         c.tm.Height,
+		LayerBase: c.layerBase(l.Name, l.Class, l.Visible, l.Opacity, l.OffsetX, l.OffsetY, l.Properties),
+		Width:     c.tm.Width,
+		Height:    c.tm.Height,
 		Cells:     make([]tilemap.Cell, len(l.Tiles)),
 	}
 
@@ -120,7 +120,7 @@ func (c *converter) tileLayer(l *gotiled.Layer) (*tilemap.TileLayer, error) {
 
 func (c *converter) imageLayer(l *gotiled.ImageLayer) *tilemap.ImageLayer {
 	out := &tilemap.ImageLayer{
-		LayerBase: layerBase(l.Name, l.Class, l.Visible, l.Opacity, l.OffsetX+float64(l.X), l.OffsetY+float64(l.Y), l.Properties),
+		LayerBase: c.layerBase(l.Name, l.Class, l.Visible, l.Opacity, l.OffsetX+float64(l.X), l.OffsetY+float64(l.Y), l.Properties),
 	}
 	if l.Image != nil && l.Image.Source != "" {
 		out.Image = tilemap.ImageRef(cleanPath(c.tm.GetFileFullPath(l.Image.Source)))

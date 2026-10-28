@@ -20,8 +20,8 @@ func (b *LayerBase) Base() *LayerBase { return b }
 
 type TileLayer struct {
 	LayerBase
-	W, H  int
-	Cells []Cell
+	Width, Height int
+	Cells         []Cell
 }
 
 // At returns the cell at p, empty outside the layer.
@@ -34,15 +34,15 @@ func (l *TileLayer) At(p TilePos) Cell {
 
 // Index is p's index in Cells, -1 outside the layer.
 func (l *TileLayer) Index(p TilePos) int {
-	if p.Col < 0 || p.Row < 0 || p.Col >= l.W || p.Row >= l.H {
+	if p.Col < 0 || p.Row < 0 || p.Col >= l.Width || p.Row >= l.Height {
 		return -1
 	}
-	return p.Row*l.W + p.Col
+	return p.Row*l.Width + p.Col
 }
 
 // Pos is the position of Cells[i].
 func (l *TileLayer) Pos(i int) TilePos {
-	return TilePos{i % l.W, i / l.W}
+	return TilePos{i % l.Width, i / l.Width}
 }
 
 // All yields every non-empty cell with its position, row by row.

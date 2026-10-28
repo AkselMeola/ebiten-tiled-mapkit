@@ -21,9 +21,11 @@ const testTMX = `<?xml version="1.0" encoding="UTF-8"?>
  <properties>
   <property name="level" type="int" value="3"/>
   <property name="tint" type="color" value="#80ff0000"/>
+  <property name="music" type="file" value="../audio/theme.ogg"/>
   <property name="spawn" type="class" propertytype="Spawn">
    <properties>
     <property name="count" type="int" value="2"/>
+    <property name="icon" type="file" value="spawn.png"/>
    </properties>
   </property>
  </properties>
@@ -81,6 +83,9 @@ const testObjsTSX = `<?xml version="1.0" encoding="UTF-8"?>
 <tileset name="objs" tilewidth="16" tileheight="24" tilecount="1" columns="0">
  <tileoffset x="1" y="-2"/>
  <tile id="5" type="Box">
+  <properties>
+   <property name="sound" type="file" value="sfx/crate.wav"/>
+  </properties>
   <image source="../../img/crate.png" width="16" height="24"/>
  </tile>
 </tileset>
@@ -99,6 +104,7 @@ const testTemplate = `<?xml version="1.0" encoding="UTF-8"?>
   <properties>
    <property name="hp" type="int" value="1"/>
    <property name="kind" value="wood"/>
+   <property name="model" type="file" value="crate.json"/>
   </properties>
  </object>
 </template>
@@ -135,11 +141,32 @@ func TestLoad(t *testing.T) {
 		if got := m.Props.Int("level"); got != 3 {
 			t.Errorf("level = %d", got)
 		}
-		if got, _ := m.Props.Color("tint"); got != (color.RGBA{R: 255, A: 128}) {
+		if got := m.Props.Color("tint"); got != (color.RGBA{R: 255, A: 128}) {
 			t.Errorf("tint = %v", got)
 		}
-		if got := m.Props.Class("spawn").Int("count"); got != 2 {
+		if got := m.Props.Nested("spawn").Int("count"); got != 2 {
 			t.Errorf("spawn.count = %d", got)
+		}
+	})
+
+	t.Run("file properties are relative to their file", func(t *testing.T) {
+		tpl := m.Layer("objs").(*tilemap.ObjectLayer).Objects[4]
+		cases := map[string]string{
+			"map":      m.Props.String("music"),
+			"nested":   m.Props.Nested("spawn").String("icon"),
+			"tileset":  tpl.Props.String("sound"),
+			"template": tpl.Props.String("model"),
+		}
+		want := map[string]string{
+			"map":      "audio/theme.ogg",
+			"nested":   "maps/spawn.png",
+			"tileset":  "maps/sets/sfx/crate.wav",
+			"template": "tpl/crate.json",
+		}
+		for name, got := range cases {
+			if got != want[name] {
+				t.Errorf("%s = %q, want %q", name, got, want[name])
+			}
 		}
 	})
 
@@ -159,7 +186,7 @@ func TestLoad(t *testing.T) {
 		if anim.AnimationDuration() != 400*time.Millisecond {
 			t.Errorf("animation duration = %v", anim.AnimationDuration())
 		}
-		if anim.FrameAt(50*time.Millisecond) != 1 || anim.FrameAt(150*time.Millisecond) != 2 {
+		if m.Frame(1, 50*time.Millisecond) != 1 || m.Frame(1, 150*time.Millisecond) != 2 {
 			t.Errorf("animation frames = %+v", anim.Animation)
 		}
 
@@ -227,7 +254,7 @@ func TestLoad(t *testing.T) {
 		}
 
 		crate := objs.Objects[0]
-		if crate.Cell != (tilemap.Cell{TileID: 5, Flip: tilemap.FlipH}) || crate.Type != "Box" || !crate.Visible {
+		if crate.Cell != (tilemap.Cell{TileID: 5, Flip: tilemap.FlipH}) || crate.Class != "Box" || !crate.Visible {
 			t.Errorf("crate = %+v", crate)
 		}
 		if crate.Opacity != 0.5 || objs.Objects[1].Opacity != 1 {
@@ -360,7 +387,7 @@ func TestLoadExampleMap(t *testing.T) {
 	if len(objects.Objects) != 6 {
 		t.Fatalf("len(Objects) = %d, want 6", len(objects.Objects))
 	}
-	if p := objects.Objects[0]; p.Type != "Player" || p.Pos != (tilemap.Vector{X: 32, Y: 32}) {
+	if p := objects.Objects[0]; p.Class != "Player" || p.Pos != (tilemap.Vector{X: 32, Y: 32}) {
 		t.Errorf("player = %+v, want top-left 32,32", p)
 	}
 
@@ -395,11 +422,11 @@ func TestTileObjectInheritsTile(t *testing.T) {
 	}
 	objects := m.Layers[0].(*tilemap.ObjectLayer).Objects
 
-	if o := objects[0]; o.Type != "Box" || o.Props.Int("weight") != 3 || o.Props.String("color") != "red" {
-		t.Errorf("plain tile object = %q %v, want the tile's class and properties", o.Type, o.Props)
+	if o := objects[0]; o.Class != "Box" || o.Props.Int("weight") != 3 || o.Props.String("color") != "red" {
+		t.Errorf("plain tile object = %q %v, want the tile's class and properties", o.Class, o.Props)
 	}
-	if o := objects[1]; o.Type != "Crate" || o.Props.Int("weight") != 3 || o.Props.String("color") != "blue" {
-		t.Errorf("overriding tile object = %q %v, want its own class and color", o.Type, o.Props)
+	if o := objects[1]; o.Class != "Crate" || o.Props.Int("weight") != 3 || o.Props.String("color") != "blue" {
+		t.Errorf("overriding tile object = %q %v, want its own class and color", o.Class, o.Props)
 	}
 
 	objects[0].Props["weight"] = 9

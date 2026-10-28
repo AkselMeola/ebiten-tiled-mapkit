@@ -34,7 +34,26 @@
 - [ ] Link it from README; keep its code compiling (e.g. per-step examples under
       `examples/tutorial/`).
 
+## API review, open
+
+- [ ] `Shape` repeats `MapObject`'s `Pos`, `Size` and `Rotation` (zero or copied on map objects).
+      Option: `Kind` and `Points` on `MapObject`, `TileDef.Colliders []MapObject`, drop `Shape`.
+- [x] `TileDef.FrameAt` returned 0 for static tiles, so callers fell back to the tile id
+      themselves. Now `Map.Frame(id, t)` and `Map.FrameOnce(id, t)`.
+
 ## Isometric
+Decide before building it:
+
+- [ ] What world space is in isometric maps. Option: the adapter normalizes Tiled's tile-axis
+      coordinates to column × `TileWidth`, row × `TileHeight`, so `tilemap` stays orientation-free
+      and only `WorldToScreen`/`ScreenToWorld` project.
+- [ ] Tile objects: `Pos` as world top-left doesn't map to the screen-aligned image. Option: draw
+      from `WorldToScreen(o.Foot())` shifted by (−w/2, −h). Settle with an adapter test against Tiled.
+- [ ] Make `MapObject.SortY()` internal: depth belongs to the projection.
+- [ ] Rename the internal `projection.tileToWorld` to `tileToScreen`; it differs from
+      `Map.TileToWorld` in isometric maps.
+- [ ] Document `Camera`'s space (screen pixels of the projected map); maybe make it a `Vector`.
+
 
 - [ ] `isometric` projection: `tileToWorld` `((c−r)·w/2, (c+r)·h/2)`, `visibleTiles`.
 - [ ] Culling: the view is a diamond in tile space. Let the projection drive tile iteration instead

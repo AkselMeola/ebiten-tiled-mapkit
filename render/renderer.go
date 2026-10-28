@@ -134,7 +134,7 @@ func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam
 	)
 
 	c0, r0, c1, r1 := r.proj.visibleTiles(r.m, view)
-	c1, r1 = min(c1, l.W-1), min(r1, l.H-1)
+	c1, r1 = min(c1, l.Width-1), min(r1, l.Height-1)
 	th := float64(r.m.TileHeight)
 	t := r.clock
 
@@ -142,7 +142,7 @@ func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam
 	var batch *ebiten.Image
 	for row := r0; row <= r1; row++ {
 		for col := c0; col <= c1; col++ {
-			cell := l.Cells[row*l.W+col]
+			cell := l.Cells[row*l.Width+col]
 			if cell.Empty() {
 				continue
 			}
@@ -285,10 +285,8 @@ func (r *MapRenderer) frame(id tilemap.TileID, t time.Duration) (tilemap.TileID,
 	if id == 0 || int(id) >= len(r.tiles) {
 		return id, nil
 	}
-	if def := &r.m.Tiles[id]; def.Animation != nil {
-		if f := def.FrameAt(t); f != 0 && int(f) < len(r.tiles) {
-			id = f
-		}
+	if f := r.m.Frame(id, t); f != 0 && int(f) < len(r.tiles) {
+		id = f
 	}
 	return id, r.tiles[id]
 }

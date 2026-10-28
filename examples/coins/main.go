@@ -104,7 +104,7 @@ func (g *Game) startLevel(cache render.ImageSource, path string) error {
 // decides what each one becomes.
 func (g *Game) spawnFromObjects() {
 	for object := range g.tileMap.Objects() {
-		switch object.Type {
+		switch object.Class {
 		case "Player":
 			// The player becomes a game entity. Hide the map object so it isn't drawn twice.
 			g.player = Player{position: object.Pos, target: object.Pos, tile: object.Cell.TileID}
@@ -186,7 +186,7 @@ func (g *Game) isBlocked(position tilemap.Vector) bool {
 func (g *Game) collectCoins() {
 	for i := range g.objectLayer.Objects {
 		object := &g.objectLayer.Objects[i]
-		if object.Type == "Coin" && object.Visible && object.Pos == g.player.position {
+		if object.Class == "Coin" && object.Visible && object.Pos == g.player.position {
 			object.Visible = false
 			g.collectedCount++
 		}

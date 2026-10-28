@@ -5,15 +5,15 @@ import "math"
 // MapObject is a spawn descriptor. Pos is the top-left corner; Rotation is in degrees, clockwise,
 // around that corner.
 type MapObject struct {
-	ID         int
-	Name, Type string
-	Pos, Size  Vector
-	Rotation   float64
-	Visible    bool
-	Opacity    float64
-	Cell       Cell
-	Shape      Shape
-	Props      Properties
+	ID          int
+	Name, Class string
+	Pos, Size   Vector
+	Rotation    float64
+	Visible     bool
+	Opacity     float64
+	Cell        Cell
+	Shape       Shape
+	Props       Properties
 }
 
 func (o *MapObject) IsTile() bool { return !o.Cell.Empty() }

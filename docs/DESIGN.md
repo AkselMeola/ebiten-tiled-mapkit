@@ -54,7 +54,7 @@ type TileDef struct {
     Src       image.Rectangle // region of that image
     Offset    image.Point     // drawing offset (Tiled tileoffset)
     Class     string          // user tile class, e.g. "Wall"
-    Animation []Frame         // nil if static; set via SetAnimation to cache the total duration
+    Animation []Frame         // nil if static
     Props     Properties
     Colliders []Shape         // relative to the tile's top-left
 }
@@ -77,7 +77,7 @@ Common fields live in an embedded `LayerBase` (`Name`, `Class`, `Visible`, `Opac
 `*ImageLayer`, `*GroupLayer`. Groups are kept, not flattened; their visibility, opacity and offset
 apply to their children at draw time. Iterators walk through groups in draw order, so game code
 needs no type switch: `AllLayers()`, `TileLayers()` and `Objects()`. `Layer(name)` finds one
-layer and `TileDef(id)` looks up a tile.
+layer, `Object(id)` one object and `TileDef(id)` a tile.
 
 ### Objects
 
@@ -88,7 +88,7 @@ library.
 ```go
 type MapObject struct {
     ID         int
-    Name, Type string
+    Name, Class string // Class is the TMX "type" attribute
     Pos, Size  Vector  // Pos = top-left corner
     Rotation   float64 // degrees, clockwise, around the top-left corner
     Visible    bool
@@ -120,7 +120,9 @@ positions from `All()`; `Map.InBounds` checks the map size. Pixel rectangles sta
 
 `Properties` is `map[string]any` holding typed values: `string`, `int`, `float64`, `bool`,
 `color.RGBA`, `FilePath`, `ObjectRef`, or nested `Properties` for class properties. Typed getters
-return zero values when missing.
+return zero values when missing. Adapters resolve `FilePath` values to paths within the map's
+`fs.FS`, relative to the file that defines them (map, tileset or template), like `ImageRef`.
+`Map.Object(id)` resolves an `ObjectRef`.
 
 ### Zero values
 
@@ -166,11 +168,11 @@ color, text objects (loaded as rects), parallax, tint, image layer repeat.
 Tile animation is a pure function of time; tiles hold no per-instance state.
 
 ```go
-func (d *TileDef) FrameAt(t time.Duration) TileID                    // loops; 0 for static tiles
-func (d *TileDef) FrameAtOnce(t time.Duration) (id TileID, done bool) // plays once, holds last frame
+func (m *Map) Frame(id TileID, t time.Duration) TileID                          // loops; id itself when static
+func (m *Map) FrameOnce(id TileID, t time.Duration) (frame TileID, done bool) // plays once, holds last frame
 ```
 
-`FrameAt` walks `t % total` through the frame durations. All instances of a tile stay in sync, as in
+They live on `Map` because a `TileDef` doesn't know its own id. `Frame` walks `t % total` through the frame durations. All instances of a tile stay in sync, as in
 Tiled, and advancing animation costs one clock increment per tick.
 
 | Clock | `Clock % 600ms` | Frame (`[{4,200ms},{5,200ms},{6,200ms}]`) |

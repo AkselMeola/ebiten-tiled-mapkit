@@ -3,10 +3,13 @@ package tilemap
 import "image/color"
 
 // Properties values are string, int, float64, bool, color.RGBA, FilePath, ObjectRef or Properties.
+// Getters return the zero value for a missing or differently typed property.
 type Properties map[string]any
 
+// FilePath is a slash-separated path within the file system the map was loaded from.
 type FilePath string
 
+// ObjectRef is a MapObject.ID; look it up with Map.Object.
 type ObjectRef int
 
 func (p Properties) String(name string) string {
@@ -46,12 +49,13 @@ func (p Properties) Bool(name string) bool {
 	return v
 }
 
-func (p Properties) Color(name string) (color.RGBA, bool) {
-	v, ok := p[name].(color.RGBA)
-	return v, ok
+func (p Properties) Color(name string) color.RGBA {
+	v, _ := p[name].(color.RGBA)
+	return v
 }
 
-func (p Properties) Class(name string) Properties {
+// Nested returns a class property's members.
+func (p Properties) Nested(name string) Properties {
 	v, _ := p[name].(Properties)
 	return v
 }

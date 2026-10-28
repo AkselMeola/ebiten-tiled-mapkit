@@ -9,13 +9,13 @@ import (
 	"time"
 )
 
-func TestFrameAt(t *testing.T) {
-	var def TileDef
-	def.SetAnimation([]Frame{
+func TestFrame(t *testing.T) {
+	m := &Map{Tiles: make([]TileDef, 7)}
+	m.Tiles[1].Animation = []Frame{
 		{TileID: 4, Duration: 200 * time.Millisecond},
 		{TileID: 5, Duration: 200 * time.Millisecond},
 		{TileID: 6, Duration: 200 * time.Millisecond},
-	})
+	}
 
 	cases := map[time.Duration]TileID{
 		0:                      4,
@@ -24,23 +24,14 @@ func TestFrameAt(t *testing.T) {
 		650 * time.Millisecond: 4,
 	}
 	for clock, want := range cases {
-		if got := def.FrameAt(clock); got != want {
-			t.Errorf("FrameAt(%v) = %d, want %d", clock, got, want)
+		if got := m.Frame(1, clock); got != want {
+			t.Errorf("Frame(1, %v) = %d, want %d", clock, got, want)
 		}
 	}
-}
-
-func TestFrameAtWithoutSetAnimation(t *testing.T) {
-	def := TileDef{Animation: []Frame{{TileID: 1, Duration: time.Second}, {TileID: 2, Duration: time.Second}}}
-	if got := def.FrameAt(1500 * time.Millisecond); got != 2 {
-		t.Errorf("FrameAt = %d, want 2", got)
-	}
-}
-
-func TestFrameAtStatic(t *testing.T) {
-	var def TileDef
-	if got := def.FrameAt(time.Second); got != 0 {
-		t.Errorf("FrameAt = %d, want 0", got)
+	for _, id := range []TileID{0, 2, 99} {
+		if got := m.Frame(id, time.Second); got != id {
+			t.Errorf("Frame(%d) = %d, want itself", id, got)
+		}
 	}
 }
 
@@ -108,9 +99,9 @@ func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 
 func nearVec(a, b Vector) bool { return near(a.X, b.X) && near(a.Y, b.Y) }
 
-func TestFrameAtOnce(t *testing.T) {
-	var def TileDef
-	def.SetAnimation([]Frame{{TileID: 4, Duration: 100 * time.Millisecond}, {TileID: 5, Duration: 100 * time.Millisecond}})
+func TestFrameOnce(t *testing.T) {
+	m := &Map{Tiles: make([]TileDef, 6)}
+	m.Tiles[1].Animation = []Frame{{TileID: 4, Duration: 100 * time.Millisecond}, {TileID: 5, Duration: 100 * time.Millisecond}}
 
 	cases := []struct {
 		t    time.Duration
@@ -124,14 +115,13 @@ func TestFrameAtOnce(t *testing.T) {
 		{time.Hour, 5, true},
 	}
 	for _, tc := range cases {
-		if id, done := def.FrameAtOnce(tc.t); id != tc.id || done != tc.done {
-			t.Errorf("FrameAtOnce(%v) = %d,%v, want %d,%v", tc.t, id, done, tc.id, tc.done)
+		if id, done := m.FrameOnce(1, tc.t); id != tc.id || done != tc.done {
+			t.Errorf("FrameOnce(1, %v) = %d,%v, want %d,%v", tc.t, id, done, tc.id, tc.done)
 		}
 	}
 
-	var static TileDef
-	if id, done := static.FrameAtOnce(time.Second); id != 0 || !done {
-		t.Errorf("static FrameAtOnce = %d,%v", id, done)
+	if id, done := m.FrameOnce(2, time.Second); id != 2 || !done {
+		t.Errorf("static FrameOnce = %d,%v", id, done)
 	}
 }
 
@@ -172,6 +162,12 @@ func TestObjects(t *testing.T) {
 	if !m.Layer("b").(*ObjectLayer).Objects[0].Visible {
 		t.Error("change through Objects did not stick")
 	}
+	if o := m.Object(3); o == nil || o.ID != 3 {
+		t.Errorf("Object(3) = %v", o)
+	}
+	if o := m.Object(9); o != nil {
+		t.Errorf("Object(9) = %v, want nil", o)
+	}
 
 	for range m.Objects() {
 		break
@@ -182,7 +178,7 @@ func TestObjects(t *testing.T) {
 }
 
 func TestTilePositions(t *testing.T) {
-	l := &TileLayer{W: 3, H: 2, Cells: []Cell{{TileID: 1}, {}, {TileID: 2}, {}, {TileID: 3}, {}}}
+	l := &TileLayer{Width: 3, Height: 2, Cells: []Cell{{TileID: 1}, {}, {TileID: 2}, {}, {TileID: 3}, {}}}
 	p := TilePos{Col: 1, Row: 1}
 
 	if got := p.Add(Right).Add(Up); got != (TilePos{Col: 2, Row: 0}) {

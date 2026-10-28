@@ -3,6 +3,7 @@ package tiled
 import (
 	"fmt"
 	"maps"
+	"path"
 
 	gotiled "github.com/lafriks/go-tiled"
 
@@ -19,7 +20,7 @@ const (
 
 func (c *converter) objectLayer(g *gotiled.ObjectGroup) (*tilemap.ObjectLayer, error) {
 	out := &tilemap.ObjectLayer{
-		LayerBase: layerBase(g.Name, g.Class, g.Visible, g.Opacity, g.OffsetX, g.OffsetY, g.Properties),
+		LayerBase: c.layerBase(g.Name, g.Class, g.Visible, g.Opacity, g.OffsetX, g.OffsetY, g.Properties),
 		Objects:   make([]tilemap.MapObject, 0, len(g.Objects)),
 	}
 	if g.DrawOrder == "index" {
@@ -37,7 +38,7 @@ func (c *converter) objectLayer(g *gotiled.ObjectGroup) (*tilemap.ObjectLayer, e
 
 func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 	src := *o
-	props := convertProps(o.Properties)
+	props := convertProps(o.Properties, c.tm.GetFileFullPath(""))
 
 	if o.Template != nil && o.Template.Object != nil {
 		t := o.Template.Object
@@ -66,7 +67,7 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 			}
 			src.GID = gid
 		}
-		merged := convertProps(t.Properties)
+		merged := convertProps(t.Properties, path.Dir(cleanPath(c.tm.GetFileFullPath(o.TemplateSource))))
 		if merged == nil {
 			merged = props
 		} else {
@@ -78,7 +79,7 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 	out := tilemap.MapObject{
 		ID:       int(src.ID),
 		Name:     src.Name,
-		Type:     src.Type,
+		Class:    src.Type, // TMX keeps the "type" attribute for what the UI calls class
 		Pos:      tilemap.Vector{X: src.X, Y: src.Y},
 		Size:     tilemap.Vector{X: src.Width, Y: src.Height},
 		Rotation: src.Rotation,
@@ -98,8 +99,8 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 				out.Size = tilemap.Vector{X: float64(def.Src.Dx()), Y: float64(def.Src.Dy())}
 			}
 			// As in Tiled, a tile object inherits its tile's class and properties.
-			if out.Type == "" {
-				out.Type = def.Class
+			if out.Class == "" {
+				out.Class = def.Class
 			}
 			if inherited := maps.Clone(def.Props); inherited != nil {
 				maps.Copy(inherited, out.Props)

@@ -53,7 +53,7 @@ func (c *converter) loadTilesets() error {
 			}
 			frames[i] = tilemap.Frame{TileID: id, Duration: time.Duration(f.Duration) * time.Millisecond}
 		}
-		c.m.Tiles[a.tile].SetAnimation(frames)
+		c.m.Tiles[a.tile].Animation = frames
 	}
 
 	return nil
@@ -75,7 +75,7 @@ func (c *converter) addTileset(ts *gotiled.Tileset) ([]pendingAnimation, error) 
 		def.Offset = offset
 		if t := meta[localID]; t != nil {
 			def.Class = t.Class
-			def.Props = convertProps(t.Properties)
+			def.Props = convertProps(t.Properties, ts.GetFileFullPath(""))
 			def.Colliders = colliders(t.ObjectGroups)
 		}
 

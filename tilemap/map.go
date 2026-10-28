@@ -47,8 +47,6 @@ type TileDef struct {
 	Animation []Frame
 	Props     Properties
 	Colliders []Shape
-
-	animTotal time.Duration
 }
 
 type Frame struct {
@@ -56,23 +54,15 @@ type Frame struct {
 	Duration time.Duration
 }
 
-func (d *TileDef) SetAnimation(frames []Frame) {
-	d.Animation = frames
-	d.animTotal = sumFrames(frames)
-}
-
 func (d *TileDef) AnimationDuration() time.Duration {
-	if d.animTotal > 0 {
-		return d.animTotal
+	var total time.Duration
+	for _, f := range d.Animation {
+		total += f.Duration
 	}
-	return sumFrames(d.Animation)
+	return total
 }
 
-// FrameAt returns the frame to show at clock t, or 0 for static tiles.
-func (d *TileDef) FrameAt(t time.Duration) TileID {
-	if len(d.Animation) == 0 {
-		return 0
-	}
+func (d *TileDef) frameAt(t time.Duration) TileID {
 	total := d.AnimationDuration()
 	if total <= 0 {
 		return d.Animation[0].TileID
@@ -91,29 +81,6 @@ func (d *TileDef) FrameAt(t time.Duration) TileID {
 	return d.Animation[len(d.Animation)-1].TileID
 }
 
-// FrameAtOnce plays the animation once and holds the last frame; done reports it has finished.
-// Static tiles return 0, true.
-func (d *TileDef) FrameAtOnce(t time.Duration) (id TileID, done bool) {
-	if len(d.Animation) == 0 {
-		return 0, true
-	}
-	if t < 0 {
-		return d.Animation[0].TileID, false
-	}
-	if t >= d.AnimationDuration() {
-		return d.Animation[len(d.Animation)-1].TileID, true
-	}
-	return d.FrameAt(t), false
-}
-
-func sumFrames(frames []Frame) time.Duration {
-	var total time.Duration
-	for _, f := range frames {
-		total += f.Duration
-	}
-	return total
-}
-
 type Map struct {
 	Width, Height         int
 	TileWidth, TileHeight int
@@ -129,6 +96,31 @@ func (m *Map) TileDef(id TileID) *TileDef {
 		return nil
 	}
 	return &m.Tiles[id]
+}
+
+// Frame is the tile that id shows at time t, looping; id itself when it isn't animated.
+func (m *Map) Frame(id TileID, t time.Duration) TileID {
+	def := m.TileDef(id)
+	if def == nil || len(def.Animation) == 0 {
+		return id
+	}
+	return def.frameAt(t)
+}
+
+// FrameOnce plays id's animation once and holds the last frame; done reports it has finished.
+// A tile that isn't animated returns id, true.
+func (m *Map) FrameOnce(id TileID, t time.Duration) (frame TileID, done bool) {
+	def := m.TileDef(id)
+	if def == nil || len(def.Animation) == 0 {
+		return id, true
+	}
+	if t < 0 {
+		return def.Animation[0].TileID, false
+	}
+	if t >= def.AnimationDuration() {
+		return def.Animation[len(def.Animation)-1].TileID, true
+	}
+	return def.frameAt(t), false
 }
 
 // InBounds reports whether p is on the map.
@@ -185,6 +177,16 @@ func (m *Map) Objects() iter.Seq[*MapObject] {
 			}
 		}
 	}
+}
+
+// Object returns the object with id, nil if there is none.
+func (m *Map) Object(id int) *MapObject {
+	for o := range m.Objects() {
+		if o.ID == id {
+			return o
+		}
+	}
+	return nil
 }
 
 // ObjectsAt yields the visible objects covering pos, in layer order. An object covers a tile when
