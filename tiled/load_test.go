@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -432,5 +433,47 @@ func TestTileObjectInheritsTile(t *testing.T) {
 	objects[0].Props["weight"] = 9
 	if m.Tiles[1].Props.Int("weight") != 3 {
 		t.Error("changing an object's properties changed the tile's")
+	}
+}
+
+func TestIsometricWorldSpace(t *testing.T) {
+	// 64x32 tiles: Tiled measures both axes in tile heights, world space in tile widths and heights.
+	fsys := anchorMap("isometric", "unspecified", `
+  <object id="1" gid="1" x="64" y="32" width="16" height="8"/>
+  <object id="2" x="32" y="64" width="32" height="32"/>
+  <object id="3" x="0" y="0"><polygon points="0,0 32,0 32,32"/></object>`)
+	fsys["m.tmx"].Data = []byte(strings.Replace(string(fsys["m.tmx"].Data), `tilewidth="16" tileheight="16" infinite`, `tilewidth="64" tileheight="32" infinite`, 1))
+	m, err := Load(fsys, "m.tmx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	objects := m.Layers[1].(*tilemap.ObjectLayer).Objects
+
+	if tile := objects[0]; tile.Foot() != (tilemap.Vector{X: 128, Y: 32}) || tile.Size != (tilemap.Vector{X: 16, Y: 8}) {
+		t.Errorf("tile object foot %v size %v, want the anchor at 128,32 and the image size", tile.Foot(), tile.Size)
+	}
+	if rect := objects[1]; rect.Pos != (tilemap.Vector{X: 64, Y: 64}) || rect.Size != (tilemap.Vector{X: 64, Y: 32}) || rect.Shape.Size != rect.Size {
+		t.Errorf("rect = %v %v %v, want one tile at 1,2", rect.Pos, rect.Size, rect.Shape.Size)
+	}
+	if poly := objects[2]; !reflect.DeepEqual(poly.Shape.Points, []tilemap.Vector{{}, {X: 64}, {X: 64, Y: 32}}) {
+		t.Errorf("polygon = %v", poly.Shape.Points)
+	}
+}
+
+func TestLoadIsometricExample(t *testing.T) {
+	m, err := Load(os.DirFS("../examples/isometric"), "map.tmx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Orientation != tilemap.OrientationIsometric {
+		t.Fatalf("orientation = %v", m.Orientation)
+	}
+	// Tiled shows the player on tile 8,5: its foot is that tile's bottom corner.
+	var classes []string
+	for o := range m.ObjectsAt(tilemap.TilePos{Col: 8, Row: 5}) {
+		classes = append(classes, o.Class)
+	}
+	if !slices.Equal(classes, []string{"Player"}) {
+		t.Errorf("objects at 8,5 = %v, want the player", classes)
 	}
 }

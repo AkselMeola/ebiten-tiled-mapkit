@@ -257,6 +257,19 @@ func TestObjectsAt(t *testing.T) {
 		}
 	}
 
+	// On an isometric map a tile object is on the tile whose bottom corner is nearest its foot.
+	m.Orientation = OrientationIsometric
+	m.Layers = []Layer{&ObjectLayer{Objects: []MapObject{{ID: 5, Pos: Vector{24, 4}, Size: Vector{16, 40}, Visible: true, Cell: Cell{TileID: 1}}}}}
+	if got := ids(TilePos{1, 2}); !slices.Equal(got, []int{5}) {
+		t.Errorf("isometric ObjectsAt(1,2) = %v, want [5]", got)
+	}
+	if got := m.ObjectTile(&m.Layers[0].(*ObjectLayer).Objects[0]); got != (TilePos{1, 2}) {
+		t.Errorf("isometric ObjectTile = %v, want 1,2", got)
+	}
+	m.Orientation = OrientationOrthogonal
+	if got := m.ObjectTile(&m.Layers[0].(*ObjectLayer).Objects[0]); got != (TilePos{2, 1}) {
+		t.Errorf("orthogonal ObjectTile = %v, want the center's tile 2,1", got)
+	}
 }
 
 func TestWorldToTile(t *testing.T) {

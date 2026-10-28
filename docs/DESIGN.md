@@ -6,7 +6,7 @@ renderer draws with Ebiten through a projection chosen by the map's orientation.
 ```
 Tiled adapter ─┐
 (Text adapter) ┴─► tilemap.Map (pure data) ─► render.MapRenderer (Ebiten)
-                                                ├─ projection (internal; orthogonal, isometric later)
+                                                ├─ projection (internal; orthogonal, isometric)
                                                 ├─ animation clock
                                                 └─ ImageSource
 ```
@@ -104,8 +104,8 @@ type MapObject struct {
 `Pos` is the top-left corner and rotation turns around it. The Tiled adapter converts, including for
 rotated objects; the conversion is lossless. `Bounds()` returns the rotated AABB and `SortY()` its
 bottom edge for depth sorting. `Center()` and `Foot()` (bottom center) also follow rotation.
-`Map.WorldToTile(o.Center())` is the tile an object stands on; `Map.ObjectsAt(pos)` yields the visible
-objects whose bounds contain the tile's center (points: their tile). It scans, with no index to go
+`Map.ObjectTile(o)` is the tile an object stands on (`WorldToTile(o.Center())`); `Map.ObjectsAt(pos)`
+yields the visible objects whose bounds contain the tile's center (points: their tile). It scans, with no index to go
 stale when the game hides objects; games index the objects they move themselves.
 
 **Vectors.** Pixel positions and sizes are `Vector{X, Y float64}` with `Add`, `Sub`, `Scale` and
@@ -200,6 +200,7 @@ type ImageSource interface {
 
 type MapRenderer struct {
     AfterLayer LayerHook // runs after every layer, visible or not
+    Sprites    func(l tilemap.Layer) []Sprite // the game's sprites for layer l, depth-sorted into it
     // map, projection, image source, clock and caches are private
 }
 
@@ -219,11 +220,29 @@ tiles (`TilePos`). Each conversion lives with its knowledge: the renderer conver
 these four; there are no per-combination helpers. `WorldToScreen` returns `x, y` so it plugs into
 `GeoM.Translate` for any image, which is why there is no world-space draw method.
 
-The projection is internal (`projection`: `tileToWorld`, `visibleTiles`): the renderer picks it
-from the orientation and games never see it.
+The projection is internal (`projection`: `tileToScreen`, `worldToScreen`, `screenToWorld`,
+`visibleTiles`, `depth`, `objectDepth`): the renderer picks it from the orientation and games never see it.
+
+**World space is the same in every orientation**: column × `TileWidth`, row × `TileHeight`. The
+Tiled adapter converts isometric object coordinates, which Tiled measures in tile heights on both
+axes, by scaling x by `TileWidth / TileHeight`. So `tilemap` never looks at the orientation for
+positions, and only `WorldToScreen` and `ScreenToWorld` project. Isometric (Tiled's diamond layout):
+screen x = `Height·TileWidth/2 + (col − row)·TileWidth/2`, y = `(col + row)·TileHeight/2`, with
+col, row the fractional world position in tiles; tile (0,0) is the top diamond and the map image's
+left edge is x 0. Tile images sit on the bottom-left of the diamond's bounding box, as in Tiled.
+
+**Isometric tile objects.** A tile object's image is upright on screen while its position is in
+world space, so its `Size` is the image size in screen pixels. The adapter still stores `Pos` as
+the top-left (anchor minus size), which keeps `Foot()` exactly at Tiled's anchor (bottom center).
+The renderer hangs every tile object's image from `WorldToScreen(o.Foot())`; on orthogonal maps
+that is the same as placing the top-left at `Pos`. `Center()` and `Bounds()` mean little for
+these objects, so `ObjectTile` and `ObjectsAt` use the tile whose bottom corner is nearest the
+foot, which is where Tiled shows the object (art is drawn to sit on that corner, like tiles).
+Non-default `objectalignment` on isometric maps is approximate: the image still hangs from the
+foot.
 
 **One renderer per map.** The constructor picks the projection from `Map.Orientation` (orthogonal,
-or unknown for hand-built maps; others are an error until implemented), loads every tile and image
+or unknown for hand-built maps, and isometric; others are an error until implemented), loads every tile and image
 layer image and returns all errors, and cuts the tile sub-images. Nothing can go stale: there is no
 `SetMap`, and a renderer is never half set up. Switching levels means a new renderer; decoded
 images live in the `ImageSource`, which the game keeps for its whole run and shares with
@@ -232,16 +251,35 @@ images live in the `ImageSource`, which the game keeps for its whole run and sha
 Draw walks `Map.Layers` in order with a type switch, skipping invisible layers and accumulating
 group offsets and opacity. The camera is rounded to whole pixels first, and `AfterLayer` gets
 the rounded camera so entities stay aligned with the map. For a tile layer it culls to the visible
-range and adds one quad per cell to a vertex batch: resolve animation, anchor bottom-left in the
+range (on isometric maps, the tile rectangle around the view's corners) and adds one quad per cell to a vertex batch: resolve animation, anchor bottom-left in the
 cell (tiles larger than the grid stick out upward, as in Tiled), add tile offset, layer offset and
 camera, and flip the corners as `DrawTile` does. Object layers draw only tile objects; other
-objects have no visuals. An object layer's `DrawOrder` is `DrawOrderTopDown` (sorted by `SortY()`,
-stable; the zero value and Tiled's default) or `DrawOrderIndex` (file order). Sorting happens every
+objects have no visuals. An object layer's `DrawOrder` is `DrawOrderTopDown` (sorted by the projection's depth: `SortY()` on
+orthogonal maps, the depth of the tile it stands on on isometric ones; stable; the zero value and Tiled's default) or `DrawOrderIndex` (file order). Sorting happens every
 frame so objects the game moves stay correct; the index buffer is reused.
 
 `DrawTile` exposes the same tile drawing for game entities: flips and tile offset first, then the
 caller's `op` in screen pixels. For a world position, `op.GeoM.Translate(r.WorldToScreen(pos,
-cam))`. Entities are drawn from the `AfterLayer` hook so they interleave with map layers.
+cam))`.
+
+**Sprites.** Game entities implement `Sprite`: `Foot() Vector` (where it stands, world pixels) and
+`Draw(dst, x, y)` (draw with the foot at screen x, y, camera and layer offset applied). The
+`Sprites` hook hands the renderer the sprites for a layer; it merges them into that layer's draw
+order by the projection's `depth`, the screen y of a world point:
+
+- a sprite at its foot; a tile at its center, where an entity on it stands; a tile object at
+  `objectDepth` (`SortY()` on orthogonal maps; on isometric ones the tile whose bottom corner is
+  its foot, as in `ObjectTile`);
+- the sort is stable with sprites appended, so a sprite at the same depth as a tile is drawn
+  after it: next to a tree on the same row, or level with it in an isometric diagonal;
+- in a `DrawOrderIndex` object layer the objects keep file order and the sprites go on top.
+
+Depth is per layer, not across layers, so Tiled's layer order keeps its meaning (roofs above,
+ground below). Things a sprite walks behind and in front of go in the sprite's layer; flat ground
+goes in a layer below, or the tiles in front of a walking sprite cover its feet. A tile layer
+without sprites keeps the row-order batched path; with sprites the visible tiles are sorted and
+the batch is flushed around each sprite. Sprites aren't culled: the game draws few, and only it
+knows their size.
 
 Implementation notes:
 
@@ -274,16 +312,15 @@ Per frame: `renderer.Update()` in `Update`, `renderer.Draw(screen, cam)` in `Dra
 
 Done: domain model; Tiled adapter (CSV/XML/base64 + zlib/gzip, embedded and external tilesets, atlas
 and image-collection tilesets, animations, flips, offsets, colliders, objects, templates, group and
-image layers, properties); orthogonal projection with culling; shared-clock animation; flips;
-object layers and tile objects; layer opacity and offsets; `DrawTile` and coordinate conversions for entities.
+image layers, properties); orthogonal and isometric projections with culling; shared-clock animation; flips;
+object layers and tile objects; layer opacity and offsets; `DrawTile` and coordinate conversions for entities;
+sprites depth-sorted with a layer's tiles and tile objects.
 
 Next, roughly in order:
 
-1. Isometric projection, which validates the `projection` abstraction, then draw order as a strategy
-   rather than a subclass.
-2. Text adapter, to validate that the domain is truly format-agnostic.
-3. `.tmj` maps; infinite maps (normalize chunks to one grid on load); zstd.
-4. Worlds (below).
+1. Text adapter, to validate that the domain is truly format-agnostic.
+2. `.tmj` maps; infinite maps (normalize chunks to one grid on load); zstd.
+3. Worlds (below).
 
 ### Worlds
 

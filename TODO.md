@@ -12,13 +12,13 @@
 
 - [x] Object layer draw order: read Tiled's `draworder` into `ObjectLayer`. With `topdown` (Tiled's
       default) the renderer sorts by `SortY()`; with `index` it keeps file order.
-- [ ] `MapRenderer.DrawObject(dst, m, obj, cam)`: draws one map object exactly as the renderer does
-      (size, rotation, opacity, camera), so games can y-sort map objects together with entities.
+- [x] ~~`MapRenderer.DrawObject(dst, m, obj, cam)`~~: not needed, `Sprites` sorts entities into
+      the object layer with its tile objects.
 - [x] `MapObject.Foot()`: bottom-center point, rotation applied, for spawning characters where
       they stand.
-- [ ] Coins example: a tree as a tile object that the player can walk behind (y-sorted in
-      `AfterLayer` of a hidden object layer), trunk blocking.
-- [ ] Document the y-sorting pattern in README.
+- [ ] Coins example: a tree as a tile object that the player can walk behind (the player is
+      already a sprite in the object layer), trunk blocking.
+- [x] Document the y-sorting pattern in README.
 
 ## Tutorial
 
@@ -42,29 +42,25 @@
       themselves. Now `Map.Frame(id, t)` and `Map.FrameOnce(id, t)`.
 
 ## Isometric
-Decide before building it:
 
-- [ ] What world space is in isometric maps. Option: the adapter normalizes Tiled's tile-axis
-      coordinates to column × `TileWidth`, row × `TileHeight`, so `tilemap` stays orientation-free
-      and only `WorldToScreen`/`ScreenToWorld` project.
-- [ ] Tile objects: `Pos` as world top-left doesn't map to the screen-aligned image. Option: draw
-      from `WorldToScreen(o.Foot())` shifted by (−w/2, −h). Settle with an adapter test against Tiled.
+- [x] World space is column × `TileWidth`, row × `TileHeight` in every orientation; the Tiled
+      adapter scales isometric object x. `WorldToTile`, `TileToWorld` and `ObjectsAt` stay as they are.
+- [x] `isometric` projection: `tileToScreen`, `worldToScreen`, `screenToWorld`, `visibleTiles`,
+      `depth`; `WorldToScreen` and `ScreenToWorld` go through it. Tile images sit bottom-left in
+      the diamond's bounding box, as in Tiled.
+- [x] Tile objects hang from `WorldToScreen(o.Foot())` in both projections; isometric object
+      layers sort by the foot's screen y. `Map.ObjectTile(o)`: an isometric tile object stands on
+      the tile whose bottom corner is nearest its foot.
+- [x] `examples/isometric`: walk the grid with the arrows.
+- [x] Depth sorting of entities with tall tiles: `render.Sprite` (`Foot`, `Draw`) and the
+      `Sprites` hook sort the game's entities into a layer by the projection's depth, in both
+      orientations. The example map keeps ground and standing tiles in separate layers.
+- [ ] Sprites ignore layer opacity, and depth doesn't span layers. Revisit if a map needs either.
+- [ ] Culling draws the tile rectangle around the view, about twice the visible diamond. Let the
+      projection drive tile iteration if profiling asks for it.
+- [ ] Non-default `objectalignment` on isometric maps: images still hang from the foot.
 - [ ] Make `MapObject.SortY()` internal: depth belongs to the projection.
-- [ ] Rename the internal `projection.tileToWorld` to `tileToScreen`; it differs from
-      `Map.TileToWorld` in isometric maps.
-- [ ] Document `Camera`'s space (screen pixels of the projected map); maybe make it a `Vector`.
-
-
-- [ ] `isometric` projection: `tileToWorld` `((c−r)·w/2, (c+r)·h/2)`, `visibleTiles`.
-- [ ] Culling: the view is a diamond in tile space. Let the projection drive tile iteration instead
-      of the renderer looping over a `c0..c1 × r0..r1` rectangle.
-- [ ] Tile image anchor from the projection (Tiled centers images horizontally in isometric maps).
-- [ ] `MapRenderer.WorldToScreen` and `ScreenToWorld` through the projection: isometric object
-      positions are in tile-axis space, not screen pixels. `drawObjectLayer` already uses
-      `WorldToScreen`; also `DrawObject` and y-sorting (depth is the foot's screen y, not `SortY()`).
-- [ ] Tiled adapter: tile object anchor is bottom-center in isometric maps.
-- [ ] `Map.WorldToTile`, `TileToWorld` and `ObjectsAt`: isometric object positions are in
-      tile-axis space.
+- [ ] Document `Camera` further; maybe make it a `Vector`.
 - [ ] Staggered and hexagonal: own projections, later.
 
 ## Performance

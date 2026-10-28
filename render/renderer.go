@@ -3,7 +3,6 @@ package render
 import (
 	"cmp"
 	"errors"
-	"fmt"
 	"image"
 	"math"
 	"slices"
@@ -21,10 +20,23 @@ type Camera struct {
 // LayerHook runs after every layer, visible or not, so the game can draw its entities in between.
 type LayerHook func(dst *ebiten.Image, l tilemap.Layer, cam Camera)
 
+// Sprite is a game entity drawn among a layer's tiles and tile objects in depth order, so it can
+// walk behind a tree. Depth comes from where it stands, the same way in every orientation.
+type Sprite interface {
+	// Foot is where the sprite stands, in world pixels.
+	Foot() tilemap.Vector
+	// Draw draws the sprite with its foot at screen position x, y.
+	Draw(dst *ebiten.Image, x, y float64)
+}
+
 // MapRenderer draws one map. Create one per map: images are shared through the ImageSource,
 // so a new renderer only cuts tiles from images already loaded.
 type MapRenderer struct {
 	AfterLayer LayerHook
+	// Sprites returns the game's sprites to draw in layer l, sorted by depth with its tiles or tile
+	// objects. A tile stands at its center; a sprite at the same depth goes on top, and on top of
+	// every object in a DrawOrderIndex layer.
+	Sprites func(l tilemap.Layer) []Sprite
 
 	m        *tilemap.Map
 	proj     projection
@@ -34,18 +46,20 @@ type MapRenderer struct {
 	parents  []*ebiten.Image
 	overdraw image.Rectangle
 	order    []drawItem
+	batch    *ebiten.Image
 	vertices []ebiten.Vertex
 	indices  []uint32
 }
 
 // NewMapRenderer loads every image m uses and returns all load errors.
 func NewMapRenderer(source ImageSource, m *tilemap.Map) (*MapRenderer, error) {
-	if m.Orientation != tilemap.OrientationOrthogonal && m.Orientation != tilemap.OrientationUnknown {
-		return nil, fmt.Errorf("render: only orthogonal maps are supported, got orientation %d", m.Orientation)
+	proj, err := newProjection(m)
+	if err != nil {
+		return nil, err
 	}
 	r := &MapRenderer{
 		m:        m,
-		proj:     newOrthogonal(m),
+		proj:     proj,
 		source:   source,
 		tiles:    make([]*ebiten.Image, len(m.Tiles)),
 		parents:  make([]*ebiten.Image, len(m.Tiles)),
@@ -86,18 +100,21 @@ func Tick() time.Duration {
 }
 
 // WorldToScreen is where world position pos appears on the screen with camera cam, rounded as in
-// Draw. It plugs into GeoM.Translate to draw tiles, images or text at world positions.
+// Draw. It plugs into GeoM.Translate to draw tiles, images or text at world positions. On
+// isometric maps it projects; WorldToScreen(pos, Camera{}) is pos on the whole map's image.
 func (r *MapRenderer) WorldToScreen(pos tilemap.Vector, cam Camera) (x, y float64) {
-	return pos.X - math.Round(cam.X), pos.Y - math.Round(cam.Y)
+	x, y = r.proj.worldToScreen(pos)
+	return x - math.Round(cam.X), y - math.Round(cam.Y)
 }
 
 // ScreenToWorld is the world position at screen pixel x, y with camera cam, such as under the
 // mouse: x, y := ebiten.CursorPosition().
 func (r *MapRenderer) ScreenToWorld(x, y int, cam Camera) tilemap.Vector {
-	return tilemap.Vector{X: float64(x) + math.Round(cam.X), Y: float64(y) + math.Round(cam.Y)}
+	return r.proj.screenToWorld(float64(x)+math.Round(cam.X), float64(y)+math.Round(cam.Y))
 }
 
 // Draw draws the map with the camera rounded to whole pixels; AfterLayer receives the rounded camera.
+// The camera is the top-left of the screen on the map's image, in its pixels.
 func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera) {
 	cam = Camera{X: math.Round(cam.X), Y: math.Round(cam.Y)}
 	r.drawLayers(dst, r.m.Layers, cam, 0, 0, 1)
@@ -108,11 +125,15 @@ func (r *MapRenderer) drawLayers(dst *ebiten.Image, layers []tilemap.Layer, cam 
 		b := l.Base()
 		if b.Visible {
 			lx, ly, la := ox+b.OffsetX, oy+b.OffsetY, alpha*b.Opacity
+			var sprites []Sprite
+			if r.Sprites != nil {
+				sprites = r.Sprites(l)
+			}
 			switch l := l.(type) {
 			case *tilemap.TileLayer:
-				r.drawTileLayer(dst, l, cam, lx, ly, la)
+				r.drawTileLayer(dst, l, cam, lx, ly, la, sprites)
 			case *tilemap.ObjectLayer:
-				r.drawObjectLayer(dst, l, cam, lx, ly, la)
+				r.drawObjectLayer(dst, l, cam, lx, ly, la, sprites)
 			case *tilemap.ImageLayer:
 				r.drawImageLayer(dst, l, cam, lx, ly, la)
 			case *tilemap.GroupLayer:
@@ -125,7 +146,7 @@ func (r *MapRenderer) drawLayers(dst *ebiten.Image, layers []tilemap.Layer, cam 
 	}
 }
 
-func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam Camera, ox, oy, alpha float64) {
+func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam Camera, ox, oy, alpha float64, sprites []Sprite) {
 	b := dst.Bounds()
 	minX, minY := int(math.Floor(cam.X-ox)), int(math.Floor(cam.Y-oy))
 	view := image.Rect(
@@ -133,48 +154,95 @@ func (r *MapRenderer) drawTileLayer(dst *ebiten.Image, l *tilemap.TileLayer, cam
 		minX+b.Dx()+r.overdraw.Min.X, minY+b.Dy()+r.overdraw.Min.Y,
 	)
 
-	c0, r0, c1, r1 := r.proj.visibleTiles(r.m, view)
+	c0, r0, c1, r1 := r.proj.visibleTiles(view)
 	c1, r1 = min(c1, l.Width-1), min(r1, l.Height-1)
-	th := float64(r.m.TileHeight)
-	t := r.clock
 
 	// Tiles are batched into one DrawTriangles call per run of tiles sharing a tileset image.
-	var batch *ebiten.Image
-	for row := r0; row <= r1; row++ {
-		for col := c0; col <= c1; col++ {
-			cell := l.Cells[row*l.Width+col]
-			if cell.Empty() {
-				continue
+	r.batch = nil
+	if len(sprites) == 0 {
+		for row := r0; row <= r1; row++ {
+			for col := c0; col <= c1; col++ {
+				r.appendTile(dst, l, tilemap.TilePos{Col: col, Row: row}, cam, ox, oy, alpha)
 			}
-			id, img := r.frame(cell.TileID, t)
-			if img == nil {
-				continue
+		}
+		r.flush(dst, r.batch)
+		return
+	}
+
+	r.order = r.tileOrder(l, image.Rect(c0, r0, c1+1, r1+1), sprites, r.order)
+	for _, item := range r.order {
+		if item.sprite {
+			r.flush(dst, r.batch)
+			r.drawSprite(dst, sprites[item.index], cam, ox, oy)
+			continue
+		}
+		r.appendTile(dst, l, l.Pos(item.index), cam, ox, oy, alpha)
+	}
+	r.flush(dst, r.batch)
+}
+
+func (r *MapRenderer) appendTile(dst *ebiten.Image, l *tilemap.TileLayer, pos tilemap.TilePos, cam Camera, ox, oy, alpha float64) {
+	cell := l.Cells[pos.Row*l.Width+pos.Col]
+	if cell.Empty() {
+		return
+	}
+	id, img := r.frame(cell.TileID, r.clock)
+	if img == nil {
+		return
+	}
+	if tex := r.parents[id]; tex != r.batch {
+		r.flush(dst, r.batch)
+		r.batch = tex
+	}
+	def := &r.m.Tiles[id]
+	src := img.Bounds()
+	_, h := flippedSize(cell.Flip, src)
+	x, y := r.proj.tileToScreen(pos)
+	r.appendQuad(
+		x+float64(def.Offset.X)+ox-cam.X,
+		y+float64(r.m.TileHeight)-h+float64(def.Offset.Y)+oy-cam.Y,
+		src, cell.Flip, float32(alpha),
+	)
+}
+
+// tileOrder lists the tiles of l within tiles, and sprites, in depth order, reusing buf.
+func (r *MapRenderer) tileOrder(l *tilemap.TileLayer, tiles image.Rectangle, sprites []Sprite, buf []drawItem) []drawItem {
+	buf = buf[:0]
+	half := tilemap.Vector{X: float64(r.m.TileWidth) / 2, Y: float64(r.m.TileHeight) / 2}
+	for row := tiles.Min.Y; row < tiles.Max.Y; row++ {
+		for col := tiles.Min.X; col < tiles.Max.X; col++ {
+			pos := tilemap.TilePos{Col: col, Row: row}
+			if !l.At(pos).Empty() {
+				buf = append(buf, drawItem{index: l.Index(pos), depth: r.proj.depth(r.m.TileToWorld(pos).Add(half))})
 			}
-			if tex := r.parents[id]; tex != batch {
-				r.flush(dst, batch)
-				batch = tex
-			}
-			def := &r.m.Tiles[id]
-			src := img.Bounds()
-			_, h := flippedSize(cell.Flip, src)
-			x, y := r.proj.tileToWorld(tilemap.TilePos{Col: col, Row: row})
-			r.appendQuad(
-				x+float64(def.Offset.X)+ox-cam.X,
-				y+th-h+float64(def.Offset.Y)+oy-cam.Y,
-				src, cell.Flip, float32(alpha),
-			)
 		}
 	}
-	r.flush(dst, batch)
+	return r.sortSprites(buf, sprites)
+}
+
+// sortSprites adds sprites to items and sorts them all by depth; a sprite goes after an item at
+// the same depth.
+func (r *MapRenderer) sortSprites(items []drawItem, sprites []Sprite) []drawItem {
+	for i, s := range sprites {
+		items = append(items, drawItem{index: i, depth: r.proj.depth(s.Foot()), sprite: true})
+	}
+	slices.SortStableFunc(items, func(a, b drawItem) int { return cmp.Compare(a.depth, b.depth) })
+	return items
+}
+
+func (r *MapRenderer) drawSprite(dst *ebiten.Image, s Sprite, cam Camera, ox, oy float64) {
+	x, y := r.WorldToScreen(s.Foot(), cam)
+	s.Draw(dst, x+ox, y+oy)
 }
 
 type drawItem struct {
-	index int
-	sortY float64
+	index  int
+	depth  float64
+	sprite bool
 }
 
 // drawOrder lists the visible tile objects of l in the layer's draw order, reusing buf.
-func drawOrder(l *tilemap.ObjectLayer, buf []drawItem) []drawItem {
+func drawOrder(l *tilemap.ObjectLayer, proj projection, buf []drawItem) []drawItem {
 	buf = buf[:0]
 	for i := range l.Objects {
 		o := &l.Objects[i]
@@ -183,12 +251,12 @@ func drawOrder(l *tilemap.ObjectLayer, buf []drawItem) []drawItem {
 		}
 		item := drawItem{index: i}
 		if l.DrawOrder == tilemap.DrawOrderTopDown {
-			item.sortY = o.SortY()
+			item.depth = proj.objectDepth(o)
 		}
 		buf = append(buf, item)
 	}
 	if l.DrawOrder == tilemap.DrawOrderTopDown {
-		slices.SortStableFunc(buf, func(a, b drawItem) int { return cmp.Compare(a.sortY, b.sortY) })
+		slices.SortStableFunc(buf, func(a, b drawItem) int { return cmp.Compare(a.depth, b.depth) })
 	}
 	return buf
 }
@@ -222,9 +290,21 @@ func (r *MapRenderer) flush(dst, tex *ebiten.Image) {
 	r.vertices, r.indices = r.vertices[:0], r.indices[:0]
 }
 
-func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer, cam Camera, ox, oy, alpha float64) {
-	r.order = drawOrder(l, r.order)
+func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer, cam Camera, ox, oy, alpha float64, sprites []Sprite) {
+	r.order = drawOrder(l, r.proj, r.order)
+	if len(sprites) > 0 {
+		if l.DrawOrder == tilemap.DrawOrderIndex {
+			for i := range r.order {
+				r.order[i].depth = math.Inf(-1)
+			}
+		}
+		r.order = r.sortSprites(r.order, sprites)
+	}
 	for _, item := range r.order {
+		if item.sprite {
+			r.drawSprite(dst, sprites[item.index], cam, ox, oy)
+			continue
+		}
 		o := &l.Objects[item.index]
 		id, img := r.frame(o.Cell.TileID, r.clock)
 		if img == nil {
@@ -236,8 +316,12 @@ func (r *MapRenderer) drawObjectLayer(dst *ebiten.Image, l *tilemap.ObjectLayer,
 		if o.Size.X > 0 && o.Size.Y > 0 && w > 0 && h > 0 {
 			op.GeoM.Scale(o.Size.X/w, o.Size.Y/h)
 		}
+		// Hung from the foot, which is the object's anchor in Tiled's isometric maps; on orthogonal
+		// maps this places the top-left at Pos as well. Layer offsets are in screen pixels.
+		op.GeoM.Translate(-o.Size.X/2, -o.Size.Y)
 		op.GeoM.Rotate(o.Rotation * math.Pi / 180)
-		op.GeoM.Translate(r.WorldToScreen(o.Pos.Add(tilemap.Vector{X: ox, Y: oy}), cam))
+		x, y := r.WorldToScreen(o.Foot(), cam)
+		op.GeoM.Translate(x+ox, y+oy)
 		op.ColorScale.ScaleAlpha(float32(alpha * o.Opacity))
 		r.drawTile(dst, img, &r.m.Tiles[id], o.Cell.Flip, op)
 	}

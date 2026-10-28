@@ -190,7 +190,7 @@ func (m *Map) Object(id int) *MapObject {
 }
 
 // ObjectsAt yields the visible objects covering pos, in layer order. An object covers a tile when
-// its bounds contain the tile's center; a point covers the tile it is on.
+// its bounds contain the tile's center; points and isometric tile objects cover their ObjectTile.
 func (m *Map) ObjectsAt(pos TilePos) iter.Seq[*MapObject] {
 	center := Vector{(float64(pos.Col) + 0.5) * float64(m.TileWidth), (float64(pos.Row) + 0.5) * float64(m.TileHeight)}
 	return func(yield func(*MapObject) bool) {
@@ -200,8 +200,8 @@ func (m *Map) ObjectsAt(pos TilePos) iter.Seq[*MapObject] {
 			}
 			lo, hi := o.Bounds()
 			covers := center.X >= lo.X && center.X < hi.X && center.Y >= lo.Y && center.Y < hi.Y
-			if lo.X == hi.X || lo.Y == hi.Y {
-				covers = m.WorldToTile(o.Center()) == pos
+			if lo.X == hi.X || lo.Y == hi.Y || m.isometricTile(o) {
+				covers = m.ObjectTile(o) == pos
 			}
 			if covers && !yield(o) {
 				return
@@ -210,8 +210,23 @@ func (m *Map) ObjectsAt(pos TilePos) iter.Seq[*MapObject] {
 	}
 }
 
+// ObjectTile is the tile o stands on, where Tiled shows it: the tile containing its center. A tile
+// object on an isometric map has its size on screen; it stands on the tile whose bottom corner is
+// nearest its foot.
+func (m *Map) ObjectTile(o *MapObject) TilePos {
+	if m.isometricTile(o) {
+		return m.WorldToTile(o.Foot().Sub(Vector{float64(m.TileWidth) / 2, float64(m.TileHeight) / 2}))
+	}
+	return m.WorldToTile(o.Center())
+}
+
+func (m *Map) isometricTile(o *MapObject) bool {
+	return m.Orientation == OrientationIsometric && o.IsTile()
+}
+
 // WorldToTile is the tile at world position v, such as an object's or an entity's. For the tile an
-// object stands on, use its center: m.WorldToTile(o.Center()).
+// object stands on, use ObjectTile. World space is col × TileWidth, row × TileHeight in every
+// orientation.
 func (m *Map) WorldToTile(v Vector) TilePos {
 	return TilePos{
 		Col: int(math.Floor(v.X / float64(m.TileWidth))),

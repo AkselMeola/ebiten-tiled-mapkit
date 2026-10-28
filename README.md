@@ -18,10 +18,10 @@ meant to stay lightweight: map loading and drawing only, no game logic, physics 
 - **Plain data model.** A map loads into `tilemap.Map`, plain Go data with no Ebiten or Tiled
   types. Your game logic reads it directly (collision, spawns, properties), and other formats can
   produce the same model.
-- **Renderer.** Orthogonal projection, culling, cached sub-images, tile animations, flips, layer
+- **Renderer.** Orthogonal and isometric maps, culling, cached sub-images, tile animations, flips, layer
   opacity and offsets, group layers, image layers and tile objects.
-- **Entity-friendly.** Draw your own entities with the map's tiles and animations, between any two
-  layers.
+- **Entity-friendly.** Draw your own entities with the map's tiles and animations, depth-sorted
+  with a layer's tiles so they walk behind trees, the same way on orthogonal and isometric maps.
 - **Any `fs.FS`.** Works with `embed.FS` (single binary, WebAssembly) and `os.DirFS`.
 
 ## Install
@@ -152,8 +152,11 @@ There are three kinds of position, and each conversion lives where its knowledge
 screen pixels  ◄── renderer, camera ──►  world pixels  ◄── map, tile size ──►  tiles
 ```
 
-- **World pixels** (`tilemap.Vector`): where things are on the map, like `MapObject.Pos`.
-- **Screen pixels**: where they appear, after the camera.
+- **World pixels** (`tilemap.Vector`): where things are on the map, like `MapObject.Pos`. Column
+  × `TileWidth`, row × `TileHeight` in every orientation, so game logic is the same on isometric
+  maps; only drawing projects.
+- **Screen pixels**: where they appear, after the camera. The camera is a position on the whole
+  map's image: `renderer.WorldToScreen(pos, render.Camera{})` is `pos` on that image.
 - **Tiles** (`tilemap.TilePos`): grid positions.
 
 | From → to | Call |
@@ -200,8 +203,8 @@ Positions and sizes are `tilemap.Vector` (`struct{ X, Y float64 }`) with `Add`, 
 `Rotate`. Vectors compare with `==`, and a game's own vector type with the same fields converts
 directly: `myVector(o.Pos)`.
 
-`m.WorldToTile(o.Center())` is the tile an object stands on, and `m.ObjectsAt(pos)` yields the
-visible objects covering a tile, for example to select one with the mouse:
+`m.ObjectTile(o)` is the tile an object stands on, where Tiled shows it, and `m.ObjectsAt(pos)`
+yields the visible objects covering a tile, for example to select one with the mouse:
 
 ```go
 x, y := ebiten.CursorPosition()
@@ -211,7 +214,8 @@ for o := range m.ObjectsAt(m.WorldToTile(renderer.ScreenToWorld(x, y, cam))) {
 ```
 
 An object covers the tiles whose centers its bounds contain, so a 2x2 object is found on all four
-and an object slightly off the grid on one. These look at map objects, which keep the positions
+and an object slightly off the grid on one. On isometric maps a tile object's size is its image on
+screen, so it covers just its `ObjectTile`: the tile whose bottom corner is nearest its foot. These look at map objects, which keep the positions
 from Tiled: for objects your game moves, such as spawned characters, keep your own index.
 
 Tile objects are drawn by the renderer. Hide one with `Visible = false`, for example when a
@@ -239,7 +243,34 @@ be opened from it directly. An object property holds the target's ID: `m.Object(
 
 ## Drawing your own entities
 
-Entities can use the map's tiles and animations, drawn between map layers:
+An entity that implements `render.Sprite` is drawn inside a layer, sorted by depth with the
+layer's tiles or tile objects, so it walks behind a tree and in front of the next one:
+
+```go
+func (p *Player) Foot() tilemap.Vector { return p.pos } // where it stands, in world pixels
+
+func (p *Player) Draw(dst *ebiten.Image, x, y float64) { // x, y: the foot on screen
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(x-8, y-16) // a 16x16 image standing on its bottom center
+	p.renderer.DrawTile(dst, tilemap.Cell{TileID: p.tile, Flip: p.flip}, p.renderer.Clock()-p.animStart, op)
+}
+
+r.Sprites = func(l tilemap.Layer) []render.Sprite {
+	if l.Base().Name == "Standing" {
+		return sprites
+	}
+	return nil
+}
+```
+
+- Depth is the screen y of where something stands: a sprite's `Foot`, a tile's center, a tile
+  object's foot. A sprite at the same depth as a tile is drawn after it. This is the same on
+  orthogonal and isometric maps; only the projection differs.
+- Put flat ground in its own layer below. A ground tile in the sprites' layer is sorted too, and
+  the tiles in front of a walking sprite would cover its feet.
+- In an object layer with `DrawOrderIndex` the sprites go on top of the objects.
+
+Anything else, such as overlays and selection markers, can be drawn between layers:
 
 ```go
 r.AfterLayer = func(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
@@ -258,7 +289,7 @@ r.AfterLayer = func(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
 }
 ```
 
-- `AfterLayer` runs after every layer, visible or not, in draw order.
+- `AfterLayer` runs after every layer, visible or not, in draw order, after the layer's sprites.
 - `WorldToScreen` turns a world position into screen coordinates and plugs into
   `GeoM.Translate`, for tiles, images, text or shapes. Scale or rotate before translating to turn
   around the top-left corner.
@@ -301,6 +332,7 @@ startup to handle errors there.
 
 `Camera{X, Y}` is the world position of the screen's top-left corner. The renderer rounds it to
 whole pixels, and passes the rounded camera to `AfterLayer`, so draw entities relative to that one.
+Sprites get their screen position with the camera already applied.
 For zoom, return a smaller logical size from `Layout` and let Ebiten scale, or draw to an offscreen
 image and scale that.
 
@@ -316,7 +348,7 @@ image and scale that.
 
 | Supported | Not yet |
 |---|---|
-| Orthogonal maps | Isometric, staggered, hexagonal rendering (they load, but only an orthogonal projection exists) |
+| Orthogonal and isometric maps | Staggered and hexagonal rendering (they load, but have no projection yet) |
 | CSV, XML and base64 layer data, zlib and gzip | zstd, infinite maps, `.tmj` JSON maps |
 | Embedded and external tilesets; single-image and image-collection tilesets | Tileset transparent color (`trans`) |
 | Tile animations, flips and rotations, tile offsets, per-tile collision shapes | Wang sets and terrains (ignored) |

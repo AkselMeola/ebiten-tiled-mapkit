@@ -80,8 +80,8 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 		ID:       int(src.ID),
 		Name:     src.Name,
 		Class:    src.Type, // TMX keeps the "type" attribute for what the UI calls class
-		Pos:      tilemap.Vector{X: src.X, Y: src.Y},
-		Size:     tilemap.Vector{X: src.Width, Y: src.Height},
+		Pos:      c.toWorld(tilemap.Vector{X: src.X, Y: src.Y}),
+		Size:     c.toWorld(tilemap.Vector{X: src.Width, Y: src.Height}),
 		Rotation: src.Rotation,
 		Visible:  src.Visible,
 		Opacity:  float64(src.Opacity),
@@ -94,6 +94,8 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 			return tilemap.MapObject{}, err
 		}
 		out.Cell = cell
+		// A tile object's size is its image size on screen, in every orientation.
+		out.Size = tilemap.Vector{X: src.Width, Y: src.Height}
 		if def := c.m.TileDef(cell.TileID); def != nil {
 			if out.Size == (tilemap.Vector{}) {
 				out.Size = tilemap.Vector{X: float64(def.Src.Dx()), Y: float64(def.Src.Dy())}
@@ -115,7 +117,20 @@ func (c *converter) object(o *gotiled.Object) (tilemap.MapObject, error) {
 	}
 
 	out.Shape = shape(&src)
+	out.Shape.Size = out.Size
+	for i, p := range out.Shape.Points {
+		out.Shape.Points[i] = c.toWorld(p)
+	}
 	return out, nil
+}
+
+// toWorld converts Tiled's object coordinates to world space. Isometric maps measure both axes
+// in tile heights; world space is col × tileWidth, row × tileHeight in every orientation.
+func (c *converter) toWorld(v tilemap.Vector) tilemap.Vector {
+	if c.m.Orientation != tilemap.OrientationIsometric || c.m.TileHeight == 0 {
+		return v
+	}
+	return tilemap.Vector{X: v.X * float64(c.m.TileWidth) / float64(c.m.TileHeight), Y: v.Y}
 }
 
 func (c *converter) cell(gid uint32) (tilemap.Cell, error) {

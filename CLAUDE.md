@@ -15,9 +15,12 @@ Planned work is in `TODO.md`. Tick items off as they land.
 - Animation is a function of time. No per-tile state, no wall-clock time in `Draw`.
 - Adapters never load pixels; `render` does, through an `ImageSource`.
 - The library holds no game logic. Game-specific behavior belongs in the example or the game.
-- Isometric is planned (`TODO.md`). Keep screen placement, culling, tile iteration and depth
-  sorting behind the internal `projection`, and world ↔ screen behind `WorldToScreen` and
+- Orthogonal and isometric are implemented. Keep screen placement, culling, tile iteration and
+  depth sorting behind the internal `projection`, and world ↔ screen behind `WorldToScreen` and
   `ScreenToWorld`; don't add code that assumes world pixels are screen pixels.
+- World space is col × `TileWidth`, row × `TileHeight` in every orientation; adapters convert.
+- Game entities are drawn the same way in every orientation: a `render.Sprite` gives its foot in
+  world pixels, the projection turns that into screen position and depth.
 - Stay lightweight: map loading and drawing only. Prefer a small hook or helper over a framework.
 
 ## Commands
@@ -27,6 +30,7 @@ go test ./...
 go vet ./...
 go test ./render -run xxx -bench . -count 5   # renderer benchmark; needs a display
 go run ./examples/coins
+go run ./examples/isometric
 cd examples/coins/assets && go run gen.go   # regenerate the example tileset
 ```
 

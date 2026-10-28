@@ -1,0 +1,25 @@
+{
+    "activeFile": "",
+    "expandedProjectPaths": [
+    ],
+    "fileStates": {
+        "Tiles.tsx": {
+            "dynamicWrapping": true,
+            "scaleInEditor": 1
+        }
+    },
+    "last.imagePath": "/home/aksel/Work/Go/ebiten-tiled-mapkit/examples/isometric",
+    "map.height": 15,
+    "map.lastUsedFormat": "tmx",
+    "map.orientation": "2",
+    "map.tileWidth": 64,
+    "map.width": 15,
+    "openFiles": [
+    ],
+    "project": "isometric.tiled-project",
+    "recentFiles": [
+        "Tiles.tsx"
+    ],
+    "tileset.lastUsedFormat": "tsx",
+    "tileset.type": 1
+}
