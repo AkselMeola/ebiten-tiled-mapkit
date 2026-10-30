@@ -98,6 +98,25 @@ func (m *Map) TileDef(id TileID) *TileDef {
 	return &m.Tiles[id]
 }
 
+// TileWhereProp returns the first tile whose property name equals value, compared with == against
+// the stored type (int, not float64, for an int property); 0 if none. Properties values never match.
+func (m *Map) TileWhereProp(name string, value any) TileID {
+	if _, nested := value.(Properties); nested {
+		return 0
+	}
+	return m.TileWhereFunc(func(def *TileDef) bool { return def.Props[name] == value })
+}
+
+// TileWhereFunc returns the first tile, in tileset order, that match reports true for; 0 if none.
+func (m *Map) TileWhereFunc(match func(def *TileDef) bool) TileID {
+	for id := 1; id < len(m.Tiles); id++ {
+		if match(&m.Tiles[id]) {
+			return TileID(id)
+		}
+	}
+	return 0
+}
+
 // Frame is the tile that id shows at time t, looping; id itself when it isn't animated.
 func (m *Map) Frame(id TileID, t time.Duration) TileID {
 	def := m.TileDef(id)

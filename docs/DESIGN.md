@@ -77,7 +77,9 @@ Common fields live in an embedded `LayerBase` (`Name`, `Class`, `Visible`, `Opac
 `*ImageLayer`, `*GroupLayer`. Groups are kept, not flattened; their visibility, opacity and offset
 apply to their children at draw time. Iterators walk through groups in draw order, so game code
 needs no type switch: `AllLayers()`, `TileLayers()` and `Objects()`. `Layer(name)` finds one
-layer, `Object(id)` one object and `TileDef(id)` a tile.
+layer, `Object(id)` one object and `TileDef(id)` a tile. `TileWhereProp(name, value)` and
+`TileWhereFunc(match)` find a tile's id by its properties, first match in tileset order; a linear
+scan, meant for lookups after loading, not per frame.
 
 ### Objects
 

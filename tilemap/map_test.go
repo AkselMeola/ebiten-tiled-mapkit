@@ -35,6 +35,39 @@ func TestFrame(t *testing.T) {
 	}
 }
 
+func TestTileWhere(t *testing.T) {
+	m := &Map{Tiles: make([]TileDef, 4)}
+	m.Tiles[0].Props = Properties{"name": "idle"} // empty slot, never matched
+	m.Tiles[1].Props = Properties{"name": "idle", "dir": "left", "speed": 2}
+	m.Tiles[2].Props = Properties{"name": "run", "dir": "left", "nested": Properties{"a": 1}}
+	m.Tiles[3].Props = Properties{"name": "run", "dir": "right"}
+
+	cases := []struct {
+		name  string
+		value any
+		want  TileID
+	}{
+		{"name", "run", 2},
+		{"speed", 2, 1},
+		{"speed", 2.0, 0},
+		{"name", "jump", 0},
+		{"missing", "run", 0},
+		{"nested", Properties{"a": 1}, 0},
+	}
+	for _, c := range cases {
+		if got := m.TileWhereProp(c.name, c.value); got != c.want {
+			t.Errorf("TileWhereProp(%q, %v) = %d, want %d", c.name, c.value, got, c.want)
+		}
+	}
+
+	got := m.TileWhereFunc(func(def *TileDef) bool {
+		return def.Props.String("name") == "run" && def.Props.String("dir") == "right"
+	})
+	if got != 3 {
+		t.Errorf("TileWhereFunc(run, right) = %d, want 3", got)
+	}
+}
+
 func TestLayerLookup(t *testing.T) {
 	inner := &TileLayer{LayerBase: LayerBase{Name: "inner"}}
 	m := Map{Layers: []Layer{

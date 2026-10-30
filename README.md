@@ -304,7 +304,19 @@ animated, for example to read a property of the current frame. For play-once ani
 opening, a box landing), `m.FrameOnce(id, t)` holds the last frame and reports when it's done.
 
 To switch animation by state or direction, give each animated tile properties in Tiled
-(`state=walk`, `dir=left`) and build a lookup from `Map.Tiles` after loading.
+(`state=walk`, `dir=left`) and look the tiles up once after loading:
+
+```go
+idle := m.TileWhereProp("state", "idle")
+walkLeft := m.TileWhereFunc(func(def *tilemap.TileDef) bool {
+	return def.Props.String("state") == "walk" && def.Props.String("dir") == "left"
+})
+```
+
+Both return the first match across all tilesets, so keep the values unique within a map, and 0
+(an empty cell, drawn as nothing) when nothing matches.
+`TileWhereProp` compares with the stored type: an int property needs an `int`, a file property a
+`tilemap.FilePath`.
 
 ## Other images
 
