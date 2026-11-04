@@ -126,22 +126,6 @@ func (m *Map) Frame(id TileID, t time.Duration) TileID {
 	return def.frameAt(t)
 }
 
-// FrameOnce plays id's animation once and holds the last frame; done reports it has finished.
-// A tile that isn't animated returns id, true.
-func (m *Map) FrameOnce(id TileID, t time.Duration) (frame TileID, done bool) {
-	def := m.TileDef(id)
-	if def == nil || len(def.Animation) == 0 {
-		return id, true
-	}
-	if t < 0 {
-		return def.Animation[0].TileID, false
-	}
-	if t >= def.AnimationDuration() {
-		return def.Animation[len(def.Animation)-1].TileID, true
-	}
-	return def.frameAt(t), false
-}
-
 // InBounds reports whether p is on the map.
 func (m *Map) InBounds(p TilePos) bool {
 	return p.Col >= 0 && p.Row >= 0 && p.Col < m.Width && p.Row < m.Height

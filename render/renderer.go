@@ -20,23 +20,10 @@ type Camera struct {
 // LayerHook runs after every layer, visible or not, so the game can draw its entities in between.
 type LayerHook func(dst *ebiten.Image, l tilemap.Layer, cam Camera)
 
-// Sprite is a game entity drawn among a layer's tiles and tile objects in depth order, so it can
-// walk behind a tree. Depth comes from where it stands, the same way in every orientation.
-type Sprite interface {
-	// Foot is where the sprite stands, in world pixels.
-	Foot() tilemap.Vector
-	// Draw draws the sprite with its foot at screen position x, y.
-	Draw(dst *ebiten.Image, x, y float64)
-}
-
 // MapRenderer draws one map. Create one per map: images are shared through the ImageSource,
 // so a new renderer only cuts tiles from images already loaded.
 type MapRenderer struct {
 	AfterLayer LayerHook
-	// Sprites returns the game's sprites to draw in layer l, sorted by depth with its tiles or tile
-	// objects. A tile stands at its center; a sprite at the same depth goes on top, and on top of
-	// every object in a DrawOrderIndex layer.
-	Sprites func(l tilemap.Layer) []Sprite
 
 	m        *tilemap.Map
 	proj     projection
@@ -114,30 +101,27 @@ func (r *MapRenderer) ScreenToWorld(x, y int, cam Camera) tilemap.Vector {
 }
 
 // Draw draws the map with the camera rounded to whole pixels; AfterLayer receives the rounded camera.
-// The camera is the top-left of the screen on the map's image, in its pixels.
-func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera) {
+// The camera is the top-left of the screen on the map's image, in its pixels. sprites are drawn
+// in the layers they are keyed by, sorted by depth with the layer's tiles; nil draws none.
+func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera, sprites SpritesByLayer) {
 	cam = Camera{X: math.Round(cam.X), Y: math.Round(cam.Y)}
-	r.drawLayers(dst, r.m.Layers, cam, 0, 0, 1)
+	r.drawLayers(dst, r.m.Layers, cam, 0, 0, 1, sprites)
 }
 
-func (r *MapRenderer) drawLayers(dst *ebiten.Image, layers []tilemap.Layer, cam Camera, ox, oy, alpha float64) {
+func (r *MapRenderer) drawLayers(dst *ebiten.Image, layers []tilemap.Layer, cam Camera, ox, oy, alpha float64, sprites SpritesByLayer) {
 	for _, l := range layers {
 		b := l.Base()
 		if b.Visible {
 			lx, ly, la := ox+b.OffsetX, oy+b.OffsetY, alpha*b.Opacity
-			var sprites []Sprite
-			if r.Sprites != nil {
-				sprites = r.Sprites(l)
-			}
 			switch l := l.(type) {
 			case *tilemap.TileLayer:
-				r.drawTileLayer(dst, l, cam, lx, ly, la, sprites)
+				r.drawTileLayer(dst, l, cam, lx, ly, la, sprites[b.Name])
 			case *tilemap.ObjectLayer:
-				r.drawObjectLayer(dst, l, cam, lx, ly, la, sprites)
+				r.drawObjectLayer(dst, l, cam, lx, ly, la, sprites[b.Name])
 			case *tilemap.ImageLayer:
 				r.drawImageLayer(dst, l, cam, lx, ly, la)
 			case *tilemap.GroupLayer:
-				r.drawLayers(dst, l.Layers, cam, lx, ly, la)
+				r.drawLayers(dst, l.Layers, cam, lx, ly, la, sprites)
 			}
 		}
 		if r.AfterLayer != nil {

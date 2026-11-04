@@ -39,7 +39,7 @@
 - [ ] `Shape` repeats `MapObject`'s `Pos`, `Size` and `Rotation` (zero or copied on map objects).
       Option: `Kind` and `Points` on `MapObject`, `TileDef.Colliders []MapObject`, drop `Shape`.
 - [x] `TileDef.FrameAt` returned 0 for static tiles, so callers fell back to the tile id
-      themselves. Now `Map.Frame(id, t)` and `Map.FrameOnce(id, t)`.
+      themselves. Now `Map.Frame(id, t)`; per-entity playback is `tilemap.Animator`.
 
 ## Isometric
 

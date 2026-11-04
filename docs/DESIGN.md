@@ -170,11 +170,10 @@ color, text objects (loaded as rects), parallax, tint, image layer repeat.
 Tile animation is a pure function of time; tiles hold no per-instance state.
 
 ```go
-func (m *Map) Frame(id TileID, t time.Duration) TileID                          // loops; id itself when static
-func (m *Map) FrameOnce(id TileID, t time.Duration) (frame TileID, done bool) // plays once, holds last frame
+func (m *Map) Frame(id TileID, t time.Duration) TileID // loops; id itself when static
 ```
 
-They live on `Map` because a `TileDef` doesn't know its own id. `Frame` walks `t % total` through the frame durations. All instances of a tile stay in sync, as in
+It lives on `Map` because a `TileDef` doesn't know its own id. `Frame` walks `t % total` through the frame durations. All instances of a tile stay in sync, as in
 Tiled, and advancing animation costs one clock increment per tick.
 
 | Clock | `Clock % 600ms` | Frame (`[{4,200ms},{5,200ms},{6,200ms}]`) |
@@ -188,10 +187,25 @@ The clock is the renderer's: `MapRenderer.Update()` adds `render.Tick()` and `Cl
 Call `Update` from Ebiten's `Update`, never wall-clock time in `Draw`, so animation is
 deterministic. A new level gets a new renderer, so its clock starts at zero.
 
-**Per-entity animation** needs no extra machinery: an entity stores when its current animation
-started and passes `clock - start` as the time. That restarts, desyncs, slows down (`* speed`) or
-pauses an animation. This replaced a per-object player map once planned on a shared animator: the
-state lives on the game entity, which outlives the object it was spawned from.
+**Per-entity animation** is a `tilemap.Animator`, one per game entity:
+
+```go
+func NewAnimator(m *Map) *Animator
+func (a *Animator) Play(id TileID)                      // loops; no restart if id already loops
+func (a *Animator) PlayTimes(id TileID, n int, then TileID) // n cycles, then loops then; n <= 0 loops
+func (a *Animator) PlayOnce(id, then TileID)            // PlayTimes(id, 1, then)
+func (a *Animator) Update(dt time.Duration)             // from the game's Update
+func (a *Animator) Frame() TileID                       // what to draw
+func (a *Animator) Done() bool                          // a once/times animation ended this Update
+func (a *Animator) Tile() TileID
+```
+
+It holds the tile and the time since it started, advanced by the game's `Update` (not the
+renderer clock), so an animation starts the moment it is played, and pausing or changing speed is
+calling `Update` differently. An earlier `Map.FrameOnce(id, clock - start)` left the start time,
+the once/loop choice and the follow-up state to every game; they ended up spread over the
+entity, its sprite and the screen, and set while drawing. The animator lives on the game entity,
+which outlives the map object it was spawned from. It is in `tilemap` because it needs no Ebiten.
 
 ## Renderer (`render`)
 
@@ -202,14 +216,22 @@ type ImageSource interface {
 
 type MapRenderer struct {
     AfterLayer LayerHook // runs after every layer, visible or not
-    Sprites    func(l tilemap.Layer) []Sprite // the game's sprites for layer l, depth-sorted into it
     // map, projection, image source, clock and caches are private
+}
+
+type SpritesByLayer map[string][]Sprite // the game's sprites per layer name, depth-sorted into it
+
+type TileSprite struct { // a Sprite drawing one tile standing on Pos
+    Renderer   *MapRenderer
+    Pos        tilemap.Vector    // bottom-centre point, world pixels; its Foot
+    Cell       tilemap.Cell
+    ColorScale ebiten.ColorScale // zero value: untinted
 }
 
 func NewMapRenderer(source ImageSource, m *tilemap.Map) (*MapRenderer, error)
 func (r *MapRenderer) Update()
 func (r *MapRenderer) Clock() time.Duration
-func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera)
+func (r *MapRenderer) Draw(dst *ebiten.Image, cam Camera, sprites SpritesByLayer)
 func (r *MapRenderer) DrawTile(dst *ebiten.Image, cell tilemap.Cell, t time.Duration, op *ebiten.DrawImageOptions)
 func (r *MapRenderer) WorldToScreen(pos tilemap.Vector, cam Camera) (x, y float64)
 func (r *MapRenderer) ScreenToWorld(x, y int, cam Camera) tilemap.Vector
@@ -264,10 +286,14 @@ frame so objects the game moves stay correct; the index buffer is reused.
 caller's `op` in screen pixels. For a world position, `op.GeoM.Translate(r.WorldToScreen(pos,
 cam))`.
 
-**Sprites.** Game entities implement `Sprite`: `Foot() Vector` (where it stands, world pixels) and
-`Draw(dst, x, y)` (draw with the foot at screen x, y, camera and layer offset applied). The
-`Sprites` hook hands the renderer the sprites for a layer; it merges them into that layer's draw
-order by the projection's `depth`, the screen y of a world point:
+**Sprites.** Game entities implement `Sprite`: `Foot() Vector` (the bottom-centre point it stands
+on, world pixels) and `Draw(dst, x, y)` (draw with the foot at screen x, y, camera and layer offset
+applied). `TileSprite` is the ready-made one: a map tile hung from its foot, with a `ColorScale`;
+games embed it to override `Draw`. The game passes sprites to `Draw` in a `SpritesByLayer`, built
+from its state that frame. This replaced a `Sprites func(l Layer) []Sprite` hook the renderer
+called mid-draw, which forced games to stash per-frame data (interpolation progress) in fields for
+the callback; now the whole frame reads top to bottom in the game's `Draw`. The renderer merges a
+layer's sprites into its draw order by the projection's `depth`, the screen y of a world point:
 
 - a sprite at its foot; a tile at its center, where an entity on it stands; a tile object at
   `objectDepth` (`SortY()` on orthogonal maps; on isometric ones the tile whose bottom corner is
@@ -308,7 +334,8 @@ Implementation notes:
 
 At startup: `ImageCache`, and `Images` for UI graphics.
 Per level: adapter → `tilemap.Map`, then `NewMapRenderer(cache, m)`.
-Per frame: `renderer.Update()` in `Update`, `renderer.Draw(screen, cam)` in `Draw`.
+Per frame: `renderer.Update()` and each `Animator.Update` in `Update`; `renderer.Draw(screen, cam,
+sprites)` in `Draw`.
 
 ## Roadmap
 

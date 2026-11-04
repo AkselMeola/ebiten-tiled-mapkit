@@ -33,38 +33,23 @@ const (
 )
 
 // Player is the game's own entity. The map only says where it starts; from then on the game
-// owns its position, direction and drawing. It is a render.Sprite, drawn by the renderer among
-// the coins in the object layer.
+// owns its position, direction and animation.
 type Player struct {
 	position tilemap.Vector // current position in pixels, top-left corner
 	target   tilemap.Vector // the tile the player is walking to
-	tile     tilemap.TileID
+	anim     *tilemap.Animator
 	flip     tilemap.Flip   // mirrored when facing left
 	size     tilemap.Vector // one tile
-	renderer *render.MapRenderer
 }
 
-// Foot is where the player stands: the bottom center of its tile. The renderer sorts the
-// player with the coins by it.
-func (p *Player) Foot() tilemap.Vector {
-	return p.position.Add(tilemap.Vector{X: p.size.X / 2, Y: p.size.Y})
-}
-
-// Draw draws the player with its feet at screen position x, y, which the renderer projected
-// from Foot with the camera applied.
-func (p *Player) Draw(screen *ebiten.Image, x, y float64) {
-	// The time picks the animation frame: the map clock while walking, frame one when standing.
-	animationTime := p.renderer.Clock()
-	if !p.isWalking() {
-		animationTime = 0
+// sprite is how the renderer draws the player, sorted with the coins in the object layer. It
+// stands on the bottom center of its tile.
+func (p *Player) sprite(renderer *render.MapRenderer) render.TileSprite {
+	return render.TileSprite{
+		Renderer: renderer,
+		Pos:      p.position.Add(tilemap.Vector{X: p.size.X / 2, Y: p.size.Y}),
+		Cell:     tilemap.Cell{TileID: p.anim.Frame(), Flip: p.flip},
 	}
-
-	// DrawTile puts the tile's top-left at the translation: half a tile left of the feet and a
-	// full tile above them.
-	options := &ebiten.DrawImageOptions{}
-	options.GeoM.Translate(x-p.size.X/2, y-p.size.Y)
-	// DrawTile draws a map tile for the game's own entity, with the flip and animation frame.
-	p.renderer.DrawTile(screen, tilemap.Cell{TileID: p.tile, Flip: p.flip}, animationTime, options)
 }
 
 // isWalking reports whether the player is between two tiles.
@@ -113,10 +98,6 @@ func (g *Game) startLevel(cache render.ImageSource, path string) error {
 	if err != nil {
 		return err
 	}
-	// Sprites gives the renderer the game's own entities per layer. It draws them in that layer,
-	// sorted by depth with the layer's tiles or objects.
-	renderer.Sprites = g.spritesIn
-
 	*g = Game{
 		tileMap:     tileMap,
 		groundLayer: tileMap.Layer("ground").(*tilemap.TileLayer),
@@ -134,12 +115,14 @@ func (g *Game) spawnFromObjects() {
 		switch object.Class {
 		case "Player":
 			// The player becomes a game entity. Hide the map object so it isn't drawn twice.
+			// The animator loops the player's walk animation from the tileset.
+			anim := tilemap.NewAnimator(g.tileMap)
+			anim.Play(object.Cell.TileID)
 			g.player = Player{
 				position: object.Pos,
 				target:   object.Pos,
-				tile:     object.Cell.TileID,
+				anim:     anim,
 				size:     tilemap.Vector{X: float64(g.tileMap.TileWidth), Y: float64(g.tileMap.TileHeight)},
-				renderer: g.renderer,
 			}
 			object.Visible = false
 		case "Coin":
@@ -159,6 +142,10 @@ func (g *Game) Update() error {
 	player.position = tilemap.Vector{
 		X: moveToward(player.position.X, player.target.X),
 		Y: moveToward(player.position.Y, player.target.Y),
+	}
+	// The walk animation only advances while walking, so a standing player holds its frame.
+	if player.isWalking() {
+		player.anim.Update(render.Tick())
 	}
 
 	// Input is only read once on a tile, so the player moves tile by tile. Reading it right after
@@ -227,24 +214,17 @@ func (g *Game) collectCoins() {
 }
 
 func (g *Game) Draw(screen *ebiten.Image) {
-	// Draws every layer in order, the player inside the object layer.
-	// The camera stays at the origin because the whole map fits in the window.
-	g.renderer.Draw(screen, render.Camera{})
+	// Draws every layer in order, the player inside the object layer: above the ground, sorted
+	// with the coins. The camera stays at the origin because the whole map fits in the window.
+	g.renderer.Draw(screen, render.Camera{}, render.SpritesByLayer{
+		"objects": {g.player.sprite(g.renderer)},
+	})
 
 	status := fmt.Sprintf("coins %d/%d", g.collectedCount, g.coinCount)
 	if g.collectedCount == g.coinCount {
 		status += "  - all collected!"
 	}
 	ebitenutil.DebugPrint(screen, status)
-}
-
-// spritesIn is the renderer's Sprites hook. The player goes into the object layer: above the
-// ground, sorted with the coins.
-func (g *Game) spritesIn(layer tilemap.Layer) []render.Sprite {
-	if layer == g.objectLayer {
-		return []render.Sprite{&g.player}
-	}
-	return nil
 }
 
 // Layout makes the game's screen exactly the map's size; Ebiten scales it up to the window.

@@ -80,7 +80,7 @@ func (g *game) Update() error {
 }
 
 func (g *game) Draw(screen *ebiten.Image) {
-	g.renderer.Draw(screen, g.cam)
+	g.renderer.Draw(screen, g.cam, nil) // nil: no sprites of your own
 }
 
 func (g *game) Layout(w, h int) (int, int) { return w, h }
@@ -243,23 +243,38 @@ be opened from it directly. An object property holds the target's ID: `m.Object(
 
 ## Drawing your own entities
 
-An entity that implements `render.Sprite` is drawn inside a layer, sorted by depth with the
-layer's tiles or tile objects, so it walks behind a tree and in front of the next one:
+Sprites are passed to `Draw` by layer name. Each is drawn inside its layer, sorted by depth with
+the layer's tiles or tile objects, so it walks behind a tree and in front of the next one.
+`render.TileSprite` draws one map tile standing on a world position:
 
 ```go
-func (p *Player) Foot() tilemap.Vector { return p.pos } // where it stands, in world pixels
+func (g *game) Draw(screen *ebiten.Image) {
+	player := render.TileSprite{
+		Renderer: g.renderer,
+		Pos:      g.player.pos, // the bottom-centre point it stands on, in world pixels
+		Cell:     tilemap.Cell{TileID: g.player.anim.Frame(), Flip: g.player.flip},
+	}
+	if g.player.hurt {
+		player.ColorScale.Scale(1, 0.4, 0.4, 1) // looks follow the game's state
+	}
+	g.renderer.Draw(screen, g.cam, render.SpritesByLayer{"Standing": {player}})
+}
+```
 
-func (p *Player) Draw(dst *ebiten.Image, x, y float64) { // x, y: the foot on screen
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(x-8, y-16) // a 16x16 image standing on its bottom center
-	p.renderer.DrawTile(dst, tilemap.Cell{TileID: p.tile, Flip: p.flip}, p.renderer.Clock()-p.animStart, op)
+Build the sprites in `Draw` from the game's state; they are plain values. For anything beyond a
+tint, implement `render.Sprite` yourself, or embed `TileSprite` and override `Draw`:
+
+```go
+type glowSprite struct {
+	render.TileSprite
+	glow *ebiten.Image
 }
 
-r.Sprites = func(l tilemap.Layer) []render.Sprite {
-	if l.Base().Name == "Standing" {
-		return sprites
-	}
-	return nil
+func (s glowSprite) Draw(dst *ebiten.Image, x, y float64) { // x, y: the foot on screen
+	s.TileSprite.Draw(dst, x, y)
+	op := &ebiten.DrawImageOptions{}
+	op.GeoM.Translate(x-8, y-16)
+	dst.DrawImage(s.glow, op)
 }
 ```
 
@@ -277,12 +292,8 @@ r.AfterLayer = func(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
 	if l.Base().Name != "objects" {
 		return
 	}
+	// Any image, here half transparent.
 	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(r.WorldToScreen(player.pos, cam))
-	r.DrawTile(dst, tilemap.Cell{TileID: player.tile, Flip: player.flip}, r.Clock()-player.animStart, op)
-
-	// Any image works the same way, here half transparent.
-	op = &ebiten.DrawImageOptions{}
 	op.ColorScale.ScaleAlpha(0.5)
 	op.GeoM.Translate(r.WorldToScreen(selected.pos, cam))
 	dst.DrawImage(ui.Get("selector"), op)
@@ -295,13 +306,30 @@ r.AfterLayer = func(dst *ebiten.Image, l tilemap.Layer, cam render.Camera) {
   around the top-left corner.
 - `DrawTile` draws a map tile with the cell's flips and the tile offset, then your `op`. Its
   top-left corner is at the origin of `op.GeoM`, in screen pixels, so it works for HUDs too.
-- The time argument picks the animation frame. `r.Clock()` keeps the tile in sync with the map,
-  and `r.Clock() - start` plays the animation from its first frame since `start`. Restarting,
-  pausing or changing speed is just changing that number.
+- The time argument picks the animation frame; `r.Clock()` keeps the tile in sync with the map.
 
+## Animating your own entities
+
+A `tilemap.Animator` plays an animated tile for one entity, from its first frame. Advance it in
+`Update` and draw its `Frame`:
+
+```go
+anim := tilemap.NewAnimator(m)
+anim.Play(walkLeft)              // loops; playing the looping tile again doesn't restart it
+anim.PlayOnce(yawn, idle)        // once, then loops idle
+anim.PlayTimes(wiggle, 3, idle)  // three times, then loops idle
+
+// in Update
+anim.Update(render.Tick())
+if anim.Done() { /* the once/times animation finished this tick */ }
+
+// in Draw
+render.TileSprite{Renderer: r, Pos: pos, Cell: tilemap.Cell{TileID: anim.Frame()}}
+```
+
+Not calling `Update` pauses the animation; `Update(dt * 2)` doubles its speed.
 `m.Frame(id, t)` is the tile an animated tile shows at time `t`, or `id` itself when it isn't
-animated, for example to read a property of the current frame. For play-once animations (a door
-opening, a box landing), `m.FrameOnce(id, t)` holds the last frame and reports when it's done.
+animated, for example to read a property of the current frame.
 
 To switch animation by state or direction, give each animated tile properties in Tiled
 (`state=walk`, `dir=left`) and look the tiles up once after loading:

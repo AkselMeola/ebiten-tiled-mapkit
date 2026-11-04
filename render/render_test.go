@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/hajimehoshi/ebiten/v2"
 
@@ -248,5 +249,83 @@ func TestNewMapRenderer(t *testing.T) {
 	m.Orientation = tilemap.OrientationStaggered
 	if _, err := NewMapRenderer(NewImageCache(fsys), m); err == nil {
 		t.Error("staggered map: no error")
+	}
+}
+
+// recordSprite appends its name to drawn whenever it is drawn.
+type recordSprite struct {
+	name  string
+	drawn *[]string
+}
+
+func (s recordSprite) Foot() tilemap.Vector { return tilemap.Vector{} }
+
+func (s recordSprite) Draw(*ebiten.Image, float64, float64) { *s.drawn = append(*s.drawn, s.name) }
+
+func TestDrawSpritesByLayer(t *testing.T) {
+	// Object layers only: they draw sprites without touching dst, so the test runs headless.
+	objects := func(name string) *tilemap.ObjectLayer {
+		return &tilemap.ObjectLayer{LayerBase: tilemap.LayerBase{Name: name, Visible: true, Opacity: 1}}
+	}
+	hidden := objects("hidden")
+	hidden.Visible = false
+	m := &tilemap.Map{TileWidth: 16, TileHeight: 16, Layers: []tilemap.Layer{
+		objects("a"),
+		&tilemap.GroupLayer{LayerBase: tilemap.LayerBase{Name: "g", Visible: true, Opacity: 1}, Layers: []tilemap.Layer{objects("b")}},
+		hidden,
+	}}
+	r := &MapRenderer{m: m, proj: newOrthogonal(m)}
+
+	var drawn []string
+	r.Draw(nil, Camera{}, SpritesByLayer{
+		"b":      {recordSprite{"in b", &drawn}},
+		"g":      {recordSprite{"in group", &drawn}},
+		"hidden": {recordSprite{"in hidden", &drawn}},
+		"none":   {recordSprite{"in none", &drawn}},
+	})
+	if !slices.Equal(drawn, []string{"in b"}) {
+		t.Errorf("drawn = %v, want only the sprite of layer b, inside its group", drawn)
+	}
+
+	drawn = nil
+	r.Draw(nil, Camera{}, nil)
+	if len(drawn) != 0 {
+		t.Errorf("nil sprites drew %v", drawn)
+	}
+}
+
+// An animation's first frame is often the animated tile itself. TileSprite draws the frame it is
+// given, not the frame the renderer's clock would pick for it.
+func TestTileSpriteDrawsFrameAsGiven(t *testing.T) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 32, 16))); err != nil {
+		t.Fatal(err)
+	}
+	fsys := fstest.MapFS{"tiles.png": {Data: buf.Bytes()}}
+	m := &tilemap.Map{TileWidth: 16, TileHeight: 16, Tiles: []tilemap.TileDef{
+		{},
+		{Image: "tiles.png", Src: image.Rect(0, 0, 16, 16), Animation: []tilemap.Frame{{TileID: 1, Duration: time.Second}, {TileID: 2, Duration: time.Second}}},
+		{Image: "tiles.png", Src: image.Rect(16, 0, 32, 16)},
+	}}
+	r, err := NewMapRenderer(NewImageCache(fsys), m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.clock = 1500 * time.Millisecond // the map's own animation of tile 1 shows tile 2 now
+
+	s := TileSprite{Renderer: r, Cell: tilemap.Cell{TileID: 1}}
+	if got := s.image(); got != r.tiles[1] {
+		t.Errorf("image = %v, want tile 1's own image %v", got.Bounds(), r.tiles[1].Bounds())
+	}
+	if (TileSprite{Renderer: r}).image() != nil || (TileSprite{Renderer: r, Cell: tilemap.Cell{TileID: 9}}).image() != nil {
+		t.Error("empty or unknown tile has an image")
+	}
+}
+
+func TestTileSpriteFoot(t *testing.T) {
+	s := TileSprite{Pos: tilemap.Vector{X: 3, Y: 4}}
+	var sprite Sprite = s
+	if sprite.Foot() != s.Pos {
+		t.Errorf("Foot = %v, want Pos %v", sprite.Foot(), s.Pos)
 	}
 }

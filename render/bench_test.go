@@ -59,7 +59,7 @@ func BenchmarkDrawFullHD(b *testing.B) {
 			r.Update()
 			runtime.ReadMemStats(&before)
 			start := time.Now()
-			r.Draw(dst, cam)
+			r.Draw(dst, cam, nil)
 			drawTime += time.Since(start)
 			runtime.ReadMemStats(&after)
 			drawAllocs += after.Mallocs - before.Mallocs

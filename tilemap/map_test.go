@@ -132,32 +132,6 @@ func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 
 func nearVec(a, b Vector) bool { return near(a.X, b.X) && near(a.Y, b.Y) }
 
-func TestFrameOnce(t *testing.T) {
-	m := &Map{Tiles: make([]TileDef, 6)}
-	m.Tiles[1].Animation = []Frame{{TileID: 4, Duration: 100 * time.Millisecond}, {TileID: 5, Duration: 100 * time.Millisecond}}
-
-	cases := []struct {
-		t    time.Duration
-		id   TileID
-		done bool
-	}{
-		{-time.Second, 4, false},
-		{0, 4, false},
-		{150 * time.Millisecond, 5, false},
-		{200 * time.Millisecond, 5, true},
-		{time.Hour, 5, true},
-	}
-	for _, tc := range cases {
-		if id, done := m.FrameOnce(1, tc.t); id != tc.id || done != tc.done {
-			t.Errorf("FrameOnce(1, %v) = %d,%v, want %d,%v", tc.t, id, done, tc.id, tc.done)
-		}
-	}
-
-	if id, done := m.FrameOnce(2, time.Second); id != 2 || !done {
-		t.Errorf("static FrameOnce = %d,%v", id, done)
-	}
-}
-
 func TestObjects(t *testing.T) {
 	m := &Map{Layers: []Layer{
 		&ObjectLayer{LayerBase: LayerBase{Name: "a"}, Objects: []MapObject{{ID: 1}, {ID: 2}}},

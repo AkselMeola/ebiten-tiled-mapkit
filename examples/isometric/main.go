@@ -29,8 +29,10 @@ const (
 	walkTicks = 16
 )
 
-// Player is the game's own entity, created from the map's Player object. It is a render.Sprite:
-// the renderer draws it among the trees and walls, in front of or behind them by where it stands.
+// Player is the game's own entity, created from the map's Player object. It is its own
+// render.Sprite rather than a render.TileSprite: it stands on the tile's center, but its image
+// hangs from the diamond's bottom corner like the map's tiles. The renderer draws it among the
+// trees and walls, in front of or behind them by where it stands.
 type Player struct {
 	tile     tilemap.TilePos // the tile the player is on, or walking to
 	position tilemap.Vector  // where the player stands, in world pixels
@@ -57,8 +59,6 @@ type Game struct {
 	tileMap  *tilemap.Map
 	renderer *render.MapRenderer
 	player   Player
-	// sprites is what the game draws in the Standing layer, reused every frame.
-	sprites []render.Sprite
 }
 
 func main() {
@@ -76,11 +76,6 @@ func main() {
 	if err := game.spawnPlayer(); err != nil {
 		log.Fatal(err)
 	}
-	// The trees and walls are in the Standing layer. The player joins it, so the renderer sorts
-	// them all by depth. Flat ground stays in its own layer below, so it never covers the player.
-	game.sprites = []render.Sprite{&game.player}
-	renderer.Sprites = game.spritesIn
-
 	ebiten.SetWindowTitle("mapkit example: isometric")
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	if err := ebiten.RunGame(game); err != nil {
@@ -183,16 +178,10 @@ func (g *Game) Draw(screen *ebiten.Image) {
 	playerX, playerY := g.renderer.WorldToScreen(g.player.position, render.Camera{})
 	camera := render.Camera{X: playerX - screenWidth/2, Y: playerY - screenHeight/2}
 
-	g.renderer.Draw(screen, camera)
+	// The trees and walls are in the Standing layer. The player joins it, so the renderer sorts
+	// them all by depth. Flat ground stays in its own layer below, so it never covers the player.
+	g.renderer.Draw(screen, camera, render.SpritesByLayer{"Standing": {&g.player}})
 	ebitenutil.DebugPrint(screen, fmt.Sprintf("tile %d,%d  arrows move", g.player.tile.Col, g.player.tile.Row))
-}
-
-// spritesIn is the renderer's Sprites hook: the game's sprites for each layer.
-func (g *Game) spritesIn(layer tilemap.Layer) []render.Sprite {
-	if layer.Base().Name == "Standing" {
-		return g.sprites
-	}
-	return nil
 }
 
 func (g *Game) Layout(int, int) (int, int) {
