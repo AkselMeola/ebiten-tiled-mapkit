@@ -21,7 +21,8 @@ type Sprite interface {
 type SpritesByLayer map[string][]Sprite
 
 // TileSprite is a Sprite that draws one tile standing on Pos. Build one per frame from the game's
-// entity; embed it in your own type and override Draw for anything beyond a tint.
+// entity. ColorScale tints it and GeoM squashes, scales or turns it; for anything else, embed it
+// in your own type, override Draw and draw Image yourself.
 type TileSprite struct {
 	Renderer *MapRenderer
 	// Pos is the bottom-centre point the tile stands on, in world pixels: its Foot.
@@ -31,25 +32,39 @@ type TileSprite struct {
 	Cell tilemap.Cell
 	// ColorScale tints the tile, e.g. ColorScale.Scale(0.6, 1, 0.6, 1); the zero value doesn't.
 	ColorScale ebiten.ColorScale
+	// GeoM transforms the tile around its foot before it is placed, e.g. GeoM.Scale(1.2, 0.8)
+	// squashes it onto the ground; the zero value leaves it as is.
+	GeoM ebiten.GeoM
 }
 
 func (s TileSprite) Foot() tilemap.Vector { return s.Pos }
 
-// Draw draws the tile bottom-centred on x, y, flipped and offset as in the map.
+// Draw draws the tile bottom-centred on x, y, flipped and offset as in the map, then transformed
+// by GeoM around x, y.
 func (s TileSprite) Draw(dst *ebiten.Image, x, y float64) {
-	img := s.image()
+	img := s.Image()
 	if img == nil {
 		return
 	}
 	w, h := flippedSize(s.Cell.Flip, img.Bounds())
-	op := &ebiten.DrawImageOptions{}
-	op.GeoM.Translate(x-w/2, y-h)
+	op := &ebiten.DrawImageOptions{GeoM: s.place(w, h, x, y)}
 	op.ColorScale = s.ColorScale
 	s.Renderer.drawTile(dst, img, &s.Renderer.m.Tiles[s.Cell.TileID], s.Cell.Flip, op)
 }
 
-// image is Cell's own tile image, nil for an empty or unknown tile.
-func (s TileSprite) image() *ebiten.Image {
+// place moves a w by h tile's foot to the origin, applies GeoM there, then moves it to x, y.
+func (s TileSprite) place(w, h, x, y float64) ebiten.GeoM {
+	var g ebiten.GeoM
+	g.Translate(-w/2, -h)
+	g.Concat(s.GeoM)
+	g.Translate(x, y)
+	return g
+}
+
+// Image is Cell's own tile image, without its animation resolved again; nil for an empty or
+// unknown tile. Flips and the tile offset aren't applied: a Draw override that wants them calls
+// TileSprite.Draw, which applies GeoM, instead.
+func (s TileSprite) Image() *ebiten.Image {
 	id := s.Cell.TileID
 	if id == 0 || int(id) >= len(s.Renderer.tiles) {
 		return nil

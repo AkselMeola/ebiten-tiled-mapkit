@@ -226,7 +226,9 @@ type TileSprite struct { // a Sprite drawing one tile standing on Pos
     Pos        tilemap.Vector    // bottom-centre point, world pixels; its Foot
     Cell       tilemap.Cell
     ColorScale ebiten.ColorScale // zero value: untinted
+    GeoM       ebiten.GeoM       // around the foot; zero value: as is
 }
+func (s TileSprite) Image() *ebiten.Image // the tile's own image, for a Draw override
 
 func NewMapRenderer(source ImageSource, m *tilemap.Map) (*MapRenderer, error)
 func (r *MapRenderer) Update()
@@ -288,8 +290,9 @@ cam))`.
 
 **Sprites.** Game entities implement `Sprite`: `Foot() Vector` (the bottom-centre point it stands
 on, world pixels) and `Draw(dst, x, y)` (draw with the foot at screen x, y, camera and layer offset
-applied). `TileSprite` is the ready-made one: a map tile hung from its foot, with a `ColorScale`;
-games embed it to override `Draw`. The game passes sprites to `Draw` in a `SpritesByLayer`, built
+applied). `TileSprite` is the ready-made one: a map tile hung from its foot, with a `ColorScale`
+and a `GeoM` applied around the foot, so scaling squashes onto the ground instead of towards the
+middle. Games embed it to override `Draw`, and `Image()` gives the override the tile's image. The game passes sprites to `Draw` in a `SpritesByLayer`, built
 from its state that frame. This replaced a `Sprites func(l Layer) []Sprite` hook the renderer
 called mid-draw, which forced games to stash per-frame data (interpolation progress) in fields for
 the callback; now the whole frame reads top to bottom in the game's `Draw`. The renderer merges a

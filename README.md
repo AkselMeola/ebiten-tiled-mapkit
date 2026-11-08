@@ -257,12 +257,17 @@ func (g *game) Draw(screen *ebiten.Image) {
 	if g.player.hurt {
 		player.ColorScale.Scale(1, 0.4, 0.4, 1) // looks follow the game's state
 	}
+	if g.player.landing {
+		player.GeoM.Scale(1.2, 0.8) // around the foot: squashes onto the ground
+	}
 	g.renderer.Draw(screen, g.cam, render.SpritesByLayer{"Standing": {player}})
 }
 ```
 
-Build the sprites in `Draw` from the game's state; they are plain values. For anything beyond a
-tint, implement `render.Sprite` yourself, or embed `TileSprite` and override `Draw`:
+Build the sprites in `Draw` from the game's state; they are plain values. `ColorScale` tints the
+tile and `GeoM` transforms it around its foot (scale, squash, rotate); both do nothing when zero.
+For anything else, implement `render.Sprite` yourself, or embed `TileSprite` and override `Draw`.
+`Image()` is the tile's image, for drawing it your own way (a shader, `DrawTriangles`):
 
 ```go
 type glowSprite struct {

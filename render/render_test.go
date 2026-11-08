@@ -314,10 +314,10 @@ func TestTileSpriteDrawsFrameAsGiven(t *testing.T) {
 	r.clock = 1500 * time.Millisecond // the map's own animation of tile 1 shows tile 2 now
 
 	s := TileSprite{Renderer: r, Cell: tilemap.Cell{TileID: 1}}
-	if got := s.image(); got != r.tiles[1] {
+	if got := s.Image(); got != r.tiles[1] {
 		t.Errorf("image = %v, want tile 1's own image %v", got.Bounds(), r.tiles[1].Bounds())
 	}
-	if (TileSprite{Renderer: r}).image() != nil || (TileSprite{Renderer: r, Cell: tilemap.Cell{TileID: 9}}).image() != nil {
+	if (TileSprite{Renderer: r}).Image() != nil || (TileSprite{Renderer: r, Cell: tilemap.Cell{TileID: 9}}).Image() != nil {
 		t.Error("empty or unknown tile has an image")
 	}
 }
@@ -327,5 +327,26 @@ func TestTileSpriteFoot(t *testing.T) {
 	var sprite Sprite = s
 	if sprite.Foot() != s.Pos {
 		t.Errorf("Foot = %v, want Pos %v", sprite.Foot(), s.Pos)
+	}
+}
+
+// GeoM scales the tile around its foot: a 2x2 tile scaled by 2 covers 4x4 above the foot.
+func TestTileSpriteGeoMPivotsOnFoot(t *testing.T) {
+	var s TileSprite
+	g := s.place(2, 2, 5, 6)
+	if x, y := g.Apply(0, 0); x != 4 || y != 4 {
+		t.Errorf("unscaled top-left at %v,%v, want 4,4", x, y)
+	}
+
+	s.GeoM.Scale(2, 2)
+	g = s.place(2, 2, 5, 6)
+	for _, c := range []struct{ sx, sy, wx, wy float64 }{
+		{0, 0, 3, 2}, // top-left
+		{2, 2, 7, 6}, // bottom-right
+		{1, 2, 5, 6}, // foot stays put
+	} {
+		if x, y := g.Apply(c.sx, c.sy); x != c.wx || y != c.wy {
+			t.Errorf("tile point %v,%v at %v,%v, want %v,%v", c.sx, c.sy, x, y, c.wx, c.wy)
+		}
 	}
 }
