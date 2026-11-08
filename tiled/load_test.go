@@ -477,3 +477,32 @@ func TestLoadIsometricExample(t *testing.T) {
 		t.Errorf("objects at 8,5 = %v, want the player", classes)
 	}
 }
+
+// A tileset that grew past the next one's firstgid overlaps its GIDs. Its animation frames still
+// name its own tiles, as in Tiled.
+func TestAnimationInOverlappingTileset(t *testing.T) {
+	fsys := fstest.MapFS{"m.tmx": {Data: []byte(`<map orientation="orthogonal" width="1" height="1" tilewidth="16" tileheight="16" infinite="0">
+ <tileset firstgid="1" name="grown" tilewidth="16" tileheight="16" tilecount="3" columns="3">
+  <image source="a.png" width="48" height="16"/>
+  <tile id="0">
+   <animation>
+    <frame tileid="1" duration="100"/>
+    <frame tileid="2" duration="100"/>
+   </animation>
+  </tile>
+ </tileset>
+ <tileset firstgid="2" name="next" tilewidth="16" tileheight="16" tilecount="2" columns="2">
+  <image source="b.png" width="32" height="16"/>
+ </tileset>
+ <layer id="1" name="l" width="1" height="1"><data encoding="csv">1</data></layer>
+</map>`)}}
+	m, err := Load(fsys, "m.tmx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, f := range m.Tiles[1].Animation {
+		if def := m.Tiles[f.TileID]; def.Image != "a.png" {
+			t.Errorf("frame %d is tile %d from %q, want a tile of a.png", i, f.TileID, def.Image)
+		}
+	}
+}

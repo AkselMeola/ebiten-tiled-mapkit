@@ -10,10 +10,13 @@ import (
 	"github.com/AkselMeola/ebiten-tiled-mapkit/tilemap"
 )
 
+// pendingAnimation is an animated tile whose frames are resolved once all tilesets are loaded.
+// Frames name tiles of their own tileset, so they are looked up in local, not by GID: when a
+// tileset grows past the next one's firstgid, the GIDs overlap but local IDs still don't.
 type pendingAnimation struct {
-	tile     tilemap.TileID
-	firstGID uint32
-	frames   []*gotiled.AnimationFrame
+	tile   tilemap.TileID
+	local  map[uint32]tilemap.TileID
+	frames []*gotiled.AnimationFrame
 }
 
 func (c *converter) loadTilesets() error {
@@ -47,7 +50,7 @@ func (c *converter) loadTilesets() error {
 	for _, a := range anims {
 		frames := make([]tilemap.Frame, len(a.frames))
 		for i, f := range a.frames {
-			id, ok := c.gidToTile[a.firstGID+f.TileID]
+			id, ok := a.local[f.TileID]
 			if !ok {
 				return fmt.Errorf("animation of tile %d references unknown tile %d", a.tile, f.TileID)
 			}
@@ -71,6 +74,7 @@ func (c *converter) addTileset(ts *gotiled.Tileset) ([]pendingAnimation, error) 
 	}
 
 	var anims []pendingAnimation
+	local := make(map[uint32]tilemap.TileID)
 	add := func(localID uint32, def tilemap.TileDef) {
 		def.Offset = offset
 		if t := meta[localID]; t != nil {
@@ -82,9 +86,10 @@ func (c *converter) addTileset(ts *gotiled.Tileset) ([]pendingAnimation, error) 
 		id := tilemap.TileID(len(c.m.Tiles))
 		c.m.Tiles = append(c.m.Tiles, def)
 		c.gidToTile[ts.FirstGID+localID] = id
+		local[localID] = id
 
 		if t := meta[localID]; t != nil && len(t.Animation) > 0 {
-			anims = append(anims, pendingAnimation{tile: id, firstGID: ts.FirstGID, frames: t.Animation})
+			anims = append(anims, pendingAnimation{tile: id, local: local, frames: t.Animation})
 		}
 	}
 
