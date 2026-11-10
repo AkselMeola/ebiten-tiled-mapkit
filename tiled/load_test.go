@@ -506,3 +506,29 @@ func TestAnimationInOverlappingTileset(t *testing.T) {
 		}
 	}
 }
+
+// LoadFromBytes resolves tilesets, templates and images in fsys relative to baseDir, so the map
+// loads as if read from a file there.
+func TestLoadFromBytes(t *testing.T) {
+	fsys := testFS()
+	want, err := Load(fsys, "maps/test.tmx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := LoadFromBytes([]byte(testTMX), fsys, "maps")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Tiles) != len(want.Tiles) || len(m.Layers) != len(want.Layers) {
+		t.Fatalf("%d tiles, %d layers; want %d, %d", len(m.Tiles), len(m.Layers), len(want.Tiles), len(want.Layers))
+	}
+	for i := range m.Tiles {
+		if m.Tiles[i].Image != want.Tiles[i].Image {
+			t.Errorf("tile %d image = %q, want %q", i, m.Tiles[i].Image, want.Tiles[i].Image)
+		}
+	}
+
+	if _, err := LoadFromBytes([]byte(testTMX), fsys, "elsewhere"); err == nil {
+		t.Error("wrong base dir: want error for the missing tilesets")
+	}
+}

@@ -31,6 +31,18 @@ func Load(fsys fs.FS, name string) (*tilemap.Map, error) {
 		return nil, fmt.Errorf("tiled: read %q: %w", name, err)
 	}
 
+	return load(data, fsys, path.Dir(name), name)
+}
+
+// LoadFromBytes reads a map from the .tmx contents in data, e.g. a generated level or one fetched
+// over the network. Tilesets, templates and images are resolved relative to baseDir within fsys,
+// as if the map were a file there; "." is fsys's root.
+func LoadFromBytes(data []byte, fsys fs.FS, baseDir string) (*tilemap.Map, error) {
+	return load(data, fsys, cleanPath(baseDir), "map in "+baseDir)
+}
+
+// load converts a map's .tmx contents; name is only for errors.
+func load(data []byte, fsys fs.FS, baseDir, name string) (*tilemap.Map, error) {
 	lay, err := scanLayout(data)
 	if err != nil {
 		return nil, fmt.Errorf("tiled: scan %q: %w", name, err)
@@ -39,7 +51,7 @@ func Load(fsys fs.FS, name string) (*tilemap.Map, error) {
 		return nil, fmt.Errorf("%w: %q", ErrInfiniteMap, name)
 	}
 
-	tm, err := gotiled.LoadReader(path.Dir(name), bytes.NewReader(data), gotiled.WithFileSystem(fsys))
+	tm, err := gotiled.LoadReader(baseDir, bytes.NewReader(data), gotiled.WithFileSystem(fsys))
 	if err != nil {
 		return nil, fmt.Errorf("tiled: parse %q: %w", name, err)
 	}

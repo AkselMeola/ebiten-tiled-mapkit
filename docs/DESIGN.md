@@ -135,6 +135,9 @@ must set them explicitly.
 
 `tiled.Load(fsys fs.FS, name string)` reads the map from `fsys`; tilesets, templates and images are
 resolved relative to it inside the same `fsys`, so `embed.FS` and `os.DirFS` both work.
+`tiled.LoadFromBytes(data []byte, fsys fs.FS, baseDir string)` takes the `.tmx` contents instead
+(a generated or downloaded level) and resolves everything else relative to `baseDir` in `fsys`, as
+if the map were a file there. Both share the same conversion.
 
 Steps:
 

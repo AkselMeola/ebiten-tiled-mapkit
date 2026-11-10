@@ -61,6 +61,7 @@ func main() {
 	cache := render.NewImageCache(assets) // for the whole game: maps and UI images
 
 	m, err := tiled.Load(assets, "maps/level1.tmx")
+	// or, for map contents from elsewhere: tiled.LoadFromBytes(data, assets, "maps")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -386,7 +387,7 @@ image and scale that.
 | Package | Purpose |
 |---|---|
 | `tilemap` | Data model: `Map`, `TileDef`, layers, `MapObject`, `Properties`. No Ebiten or Tiled imports. |
-| `tiled` | `Load(fsys, path)`: Tiled `.tmx` → `tilemap.Map`. |
+| `tiled` | `Load(fsys, path)`: Tiled `.tmx` → `tilemap.Map`. `LoadFromBytes(data, fsys, baseDir)`: the same from `.tmx` contents, with tilesets and images from `baseDir` in `fsys`. |
 | `render` | `MapRenderer`, `ImageCache`, `Images`. |
 
 ## Tiled support
